@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
     });
 
-    ['schemeFilter', 'typeFilter', 'monthFilter'].forEach(id => {
+    ['schemeFilter', 'typeFilter'].forEach(id => {
         document.getElementById(id).addEventListener('change', updateDashboard);
     });
 
@@ -192,7 +192,6 @@ function normalizeRows(records) {
 function setupFilters() {
     populateSelect('schemeFilter', rows.map(row => row.scheme), 'Semua skim');
     populateSelect('typeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
-    populateMonthSelect('monthFilter', 'Semua bulan');
     populateSelect('tableSchemeFilter', rows.map(row => row.scheme), 'Semua skim');
     populateSelect('tableTypeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
 }
@@ -200,13 +199,11 @@ function setupFilters() {
 function updateDashboard() {
     const scheme = document.getElementById('schemeFilter').value;
     const type = document.getElementById('typeFilter').value;
-    const month = document.getElementById('monthFilter').value;
 
     filteredRows = rows.filter(row => {
         const schemeMatch = scheme === 'all' || row.scheme === scheme;
         const typeMatch = type === 'all' || row.applicationTypeLabel === type;
-        const monthMatch = month === 'all' || row.appliedDate.getMonth() === Number(month);
-        return schemeMatch && typeMatch && monthMatch;
+        return schemeMatch && typeMatch;
     });
 
     updateKpis(filteredRows);
@@ -237,10 +234,6 @@ function updateTrendChart(activeRows) {
     const data = metricMode === 'percent'
         ? numerator.map((value, index) => denominator[index] ? (value / denominator[index]) * 100 : 0)
         : numerator;
-
-    document.getElementById('trendNote').textContent = metricMode === 'percent'
-        ? 'Peratus permohonan 5 hari ke bawah mengikut bulan mohon.'
-        : 'Bilangan permohonan 5 hari ke bawah mengikut bulan mohon.';
 
     renderLineChart('trendChart', monthLabels, data, metricMode === 'percent');
 }
@@ -308,9 +301,6 @@ function updateSummaryTable() {
     }), { month: 'Jumlah Keseluruhan', underFive: 0, overFive: 0 });
 
     document.getElementById('summaryTableFoot').innerHTML = renderSummaryRow(totalRow);
-    const pendingCount = activeRows.filter(row => !row.isApproved).length;
-    document.getElementById('tableNote').textContent =
-        `${activeRows.length.toLocaleString('ms-MY')} rekod. ${pendingCount.toLocaleString('ms-MY')} belum diluluskan dikira hingga ${formatShortDate(dataRange.last)}.`;
 }
 
 function renderSummaryRow(row) {
