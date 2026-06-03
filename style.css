@@ -83,7 +83,6 @@ body {
 .upload-card,
 .filter-card,
 .chart-card,
-.rank-card,
 .table-card {
     margin-top: 14px;
     background: #fff;
@@ -229,7 +228,7 @@ select {
 
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     margin-top: 14px;
 }
@@ -246,6 +245,14 @@ select {
 
 .kpi-card.good {
     border-left-color: var(--good);
+}
+
+.kpi-card.approved {
+    border-left-color: var(--good);
+}
+
+.kpi-card.pending {
+    border-left-color: var(--warn);
 }
 
 .kpi-card.risk {
@@ -272,8 +279,7 @@ select {
 }
 
 .chart-card,
-.table-card,
-.rank-card {
+.table-card {
     padding: 16px;
 }
 
@@ -323,39 +329,6 @@ select {
 canvas {
     width: 100% !important;
     height: 310px;
-}
-
-.rank-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-}
-
-.rank-list {
-    display: grid;
-    gap: 10px;
-}
-
-.rank-item {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: center;
-    padding: 11px 12px;
-    background: var(--soft);
-    border: 1px solid #e2eaf0;
-    border-radius: 8px;
-}
-
-.rank-item strong {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.rank-item span {
-    color: var(--muted);
-    font-weight: 800;
 }
 
 .table-wrap {
@@ -425,7 +398,6 @@ tfoot td {
     .upload-card,
     .filter-card,
     .chart-card,
-    .rank-card,
     .table-card {
         padding: 14px;
     }
@@ -437,8 +409,7 @@ tfoot td {
     }
 
     .filters,
-    .table-filters,
-    .rank-grid {
+    .table-filters {
         grid-template-columns: 1fr;
     }
 

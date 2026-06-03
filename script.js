@@ -26,12 +26,12 @@ const HOLIDAY_DATES_2026 = new Set([
 ]);
 
 const monthLabels = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogos', 'Sept', 'Okt', 'Nov', 'Dis'];
-const fullMonthLabels = ['Januari', 'Februari', 'Mac', 'April', 'Mei', 'Jun', 'Julai', 'Ogos', 'September', 'Oktober', 'November', 'Disember'];
 const typeLabels = { new: 'Baharu', renewal: 'Penyambungan', appeal: 'Rayuan' };
 
 let headerMap = {};
 let rows = [];
 let filteredRows = [];
+let approvedFilteredRows = [];
 let metricMode = 'count';
 let currentSummaryRows = [];
 let dataRange = { first: null, last: null };
@@ -160,33 +160,24 @@ function resolveHeaders(headers) {
 }
 
 function normalizeRows(records) {
-    const firstPass = records.map(record => {
+    return records.map(record => {
         const appliedDate = parseAppDate(record[headerMap.appliedAt]);
         const approvedDate = parseAppDate(record[headerMap.approvedAt]);
         if (!appliedDate) return null;
 
         const type = (record[headerMap.applicationType] || '').toLowerCase();
+        const isApproved = Boolean(approvedDate);
         return {
             appliedDate,
             approvedDate,
+            aging: isApproved ? calculateWorkingDays(appliedDate, approvedDate) : null,
+            isApproved,
             scheme: record[headerMap.scheme] || '(Tiada skim)',
             branch: headerMap.branch ? (record[headerMap.branch] || '(Tiada cawangan)') : '(Tiada cawangan)',
             applicationType: type,
             applicationTypeLabel: typeLabels[type] || titleCase(type || 'Lain-lain')
         };
     }).filter(Boolean);
-
-    const fallbackDate = getDateRange(firstPass).last;
-    return firstPass.map(row => {
-        const effectiveEndDate = row.approvedDate || fallbackDate;
-        const aging = calculateWorkingDays(row.appliedDate, effectiveEndDate);
-        return {
-            ...row,
-            effectiveEndDate,
-            aging,
-            isApproved: Boolean(row.approvedDate)
-        };
-    });
 }
 
 function setupFilters() {
@@ -205,27 +196,32 @@ function updateDashboard() {
         const typeMatch = type === 'all' || row.applicationTypeLabel === type;
         return schemeMatch && typeMatch;
     });
+    approvedFilteredRows = filteredRows.filter(row => row.isApproved);
 
-    updateKpis(filteredRows);
-    updateTrendChart(filteredRows);
+    updateKpis(filteredRows, approvedFilteredRows);
+    updateTrendChart(approvedFilteredRows);
 }
 
-function updateKpis(activeRows) {
+function updateKpis(activeRows, approvedRows) {
     const total = activeRows.length;
-    const onTime = activeRows.filter(row => row.aging <= 5).length;
-    const late = total - onTime;
+    const approved = approvedRows.length;
+    const pending = total - approved;
+    const onTime = approvedRows.filter(row => row.aging <= 5).length;
+    const late = approved - onTime;
 
     document.getElementById('totalApplications').textContent = total.toLocaleString('ms-MY');
+    document.getElementById('approvedApplications').textContent = approved.toLocaleString('ms-MY');
+    document.getElementById('pendingApplications').textContent = pending.toLocaleString('ms-MY');
     document.getElementById('onTimeApplications').textContent = onTime.toLocaleString('ms-MY');
     document.getElementById('lateApplications').textContent = late.toLocaleString('ms-MY');
-    document.getElementById('onTimePercent').textContent = total ? `${((onTime / total) * 100).toFixed(1)}%` : '0%';
+    document.getElementById('onTimePercent').textContent = approved ? `${((onTime / approved) * 100).toFixed(1)}%` : '0%';
 }
 
-function updateTrendChart(activeRows) {
+function updateTrendChart(approvedRows) {
     const denominator = Array(12).fill(0);
     const numerator = Array(12).fill(0);
 
-    activeRows.forEach(row => {
+    approvedRows.forEach(row => {
         const month = row.appliedDate.getMonth();
         denominator[month]++;
         if (row.aging <= 5) numerator[month]++;
@@ -238,54 +234,19 @@ function updateTrendChart(activeRows) {
     renderLineChart('trendChart', monthLabels, data, metricMode === 'percent');
 }
 
-function updateRankings(activeRows) {
-    const grouped = new Map();
-    activeRows.forEach(row => {
-        if (!grouped.has(row.scheme)) grouped.set(row.scheme, { scheme: row.scheme, total: 0, onTime: 0 });
-        const item = grouped.get(row.scheme);
-        item.total++;
-        if (row.aging <= 5) item.onTime++;
-    });
-
-    const ranked = [...grouped.values()]
-        .filter(item => item.total > 0)
-        .map(item => ({ ...item, percent: (item.onTime / item.total) * 100 }));
-
-    const best = [...ranked].sort((a, b) => b.percent - a.percent || b.total - a.total).slice(0, 5);
-    const risk = [...ranked].sort((a, b) => a.percent - b.percent || b.total - a.total).slice(0, 5);
-
-    renderRankList('bestSchemes', best);
-    renderRankList('riskSchemes', risk);
-}
-
-function renderRankList(elementId, items) {
-    const element = document.getElementById(elementId);
-    if (!items.length) {
-        element.innerHTML = '<div class="empty-state">Tiada data untuk filter ini.</div>';
-        return;
-    }
-
-    element.innerHTML = items.map(item => `
-        <div class="rank-item">
-            <strong title="${escapeHtml(toProperCaps(item.scheme))}">${escapeHtml(toProperCaps(item.scheme))}</strong>
-            <span>${item.percent.toFixed(1)}%</span>
-        </div>
-    `).join('');
-}
-
 function updateSummaryTable() {
     if (!rows.length) return;
 
     const scheme = document.getElementById('tableSchemeFilter').value;
     const type = document.getElementById('tableTypeFilter').value;
-    const activeRows = rows.filter(row => {
+    const approvedRows = rows.filter(row => {
         const schemeMatch = scheme === 'all' || row.scheme === scheme;
         const typeMatch = type === 'all' || row.applicationTypeLabel === type;
-        return schemeMatch && typeMatch;
+        return row.isApproved && schemeMatch && typeMatch;
     });
 
     const grouped = monthLabels.map((month, index) => ({ month, monthIndex: index, underFive: 0, overFive: 0 }));
-    activeRows.forEach(row => {
+    approvedRows.forEach(row => {
         const item = grouped[row.appliedDate.getMonth()];
         if (row.aging <= 5) item.underFive++;
         else item.overFive++;
@@ -444,7 +405,7 @@ function switchTab(panelId) {
     document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === panelId);
     });
-    if (panelId === 'fiveDayPanel') updateTrendChart(filteredRows);
+    if (panelId === 'fiveDayPanel') updateTrendChart(approvedFilteredRows);
 }
 
 function populateSelect(id, values, allLabel) {
@@ -453,14 +414,6 @@ function populateSelect(id, values, allLabel) {
     select.innerHTML = [
         `<option value="all">${escapeHtml(allLabel)}</option>`,
         ...unique.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(toProperCaps(value))}</option>`)
-    ].join('');
-}
-
-function populateMonthSelect(id, allLabel) {
-    const select = document.getElementById(id);
-    select.innerHTML = [
-        `<option value="all">${escapeHtml(allLabel)}</option>`,
-        ...fullMonthLabels.map((label, index) => `<option value="${index}">${label}</option>`)
     ].join('');
 }
 
