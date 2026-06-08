@@ -46,9 +46,20 @@
                         <h2>Dashboard Kelulusan 5 Hari</h2>
                     </div>
                     <div class="filters">
-                        <label>
+                        <label class="field-label">
                             <span>Skim</span>
-                            <select id="schemeFilter"></select>
+                            <div class="multi-select" id="schemeFilter">
+                                <button type="button" class="multi-select-toggle" id="schemeFilterToggle" aria-expanded="false" aria-controls="schemeFilterMenu">
+                                    Semua skim
+                                </button>
+                                <div class="multi-select-menu" id="schemeFilterMenu" hidden>
+                                    <div class="multi-select-actions">
+                                        <button type="button" id="schemeSelectAllBtn">Pilih Semua</button>
+                                        <button type="button" id="schemeClearBtn">Kosongkan</button>
+                                    </div>
+                                    <div class="multi-select-options" id="schemeFilterOptions"></div>
+                                </div>
+                            </div>
                         </label>
                         <label>
                             <span>Jenis</span>
@@ -112,9 +123,20 @@
                         <h2>Jadual Prestasi Keseluruhan</h2>
                     </div>
                     <div class="filters table-filters">
-                        <label>
+                        <label class="field-label">
                             <span>Skim</span>
-                            <select id="tableSchemeFilter"></select>
+                            <div class="multi-select" id="tableSchemeFilter">
+                                <button type="button" class="multi-select-toggle" id="tableSchemeFilterToggle" aria-expanded="false" aria-controls="tableSchemeFilterMenu">
+                                    Semua skim
+                                </button>
+                                <div class="multi-select-menu" id="tableSchemeFilterMenu" hidden>
+                                    <div class="multi-select-actions">
+                                        <button type="button" id="tableSchemeSelectAllBtn">Pilih Semua</button>
+                                        <button type="button" id="tableSchemeClearBtn">Kosongkan</button>
+                                    </div>
+                                    <div class="multi-select-options" id="tableSchemeFilterOptions"></div>
+                                </div>
+                            </div>
                         </label>
                         <label>
                             <span>Jenis</span>

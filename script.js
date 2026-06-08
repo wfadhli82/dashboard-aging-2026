@@ -32,6 +32,10 @@ let headerMap = {};
 let rows = [];
 let filteredRows = [];
 let approvedFilteredRows = [];
+let schemeOptions = [];
+let tableSchemeOptions = [];
+let selectedSchemes = [];
+let selectedTableSchemes = [];
 let metricMode = 'count';
 let currentSummaryRows = [];
 let dataRange = { first: null, last: null };
@@ -49,18 +53,33 @@ document.addEventListener('DOMContentLoaded', () => {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
     });
 
-    ['schemeFilter', 'typeFilter'].forEach(id => {
-        document.getElementById(id).addEventListener('change', updateDashboard);
-    });
+    document.getElementById('typeFilter').addEventListener('change', updateDashboard);
 
-    ['tableSchemeFilter', 'tableTypeFilter'].forEach(id => {
-        document.getElementById(id).addEventListener('change', updateSummaryTable);
+    document.getElementById('tableTypeFilter').addEventListener('change', updateSummaryTable);
+    setupMultiSelectEvents({
+        clearButtonId: 'schemeClearBtn',
+        menuId: 'schemeFilterMenu',
+        onChange: updateDashboard,
+        optionsId: 'schemeFilterOptions',
+        selectAllButtonId: 'schemeSelectAllBtn',
+        selectedKey: 'dashboard',
+        toggleId: 'schemeFilterToggle'
     });
+    setupMultiSelectEvents({
+        clearButtonId: 'tableSchemeClearBtn',
+        menuId: 'tableSchemeFilterMenu',
+        onChange: updateSummaryTable,
+        optionsId: 'tableSchemeFilterOptions',
+        selectAllButtonId: 'tableSchemeSelectAllBtn',
+        selectedKey: 'table',
+        toggleId: 'tableSchemeFilterToggle'
+    });
+    document.addEventListener('click', closeMultiSelectMenus);
 
     document.querySelectorAll('input[name="metricMode"]').forEach(input => {
         input.addEventListener('change', event => {
             metricMode = event.target.value;
-            updateTrendChart(filteredRows);
+            updateTrendChart(approvedFilteredRows);
         });
     });
 
@@ -181,18 +200,37 @@ function normalizeRows(records) {
 }
 
 function setupFilters() {
-    populateSelect('schemeFilter', rows.map(row => row.scheme), 'Semua skim');
+    schemeOptions = getUniqueValues(rows.map(row => row.scheme));
+    tableSchemeOptions = [...schemeOptions];
+    selectedSchemes = [...schemeOptions];
+    selectedTableSchemes = [...tableSchemeOptions];
+    renderMultiSelect({
+        allLabel: 'Semua skim',
+        onChange: updateDashboard,
+        options: schemeOptions,
+        optionsId: 'schemeFilterOptions',
+        selected: selectedSchemes,
+        selectedKey: 'dashboard',
+        toggleId: 'schemeFilterToggle'
+    });
+    renderMultiSelect({
+        allLabel: 'Semua skim',
+        onChange: updateSummaryTable,
+        options: tableSchemeOptions,
+        optionsId: 'tableSchemeFilterOptions',
+        selected: selectedTableSchemes,
+        selectedKey: 'table',
+        toggleId: 'tableSchemeFilterToggle'
+    });
     populateSelect('typeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
-    populateSelect('tableSchemeFilter', rows.map(row => row.scheme), 'Semua skim');
     populateSelect('tableTypeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
 }
 
 function updateDashboard() {
-    const scheme = document.getElementById('schemeFilter').value;
     const type = document.getElementById('typeFilter').value;
 
     filteredRows = rows.filter(row => {
-        const schemeMatch = scheme === 'all' || row.scheme === scheme;
+        const schemeMatch = selectedSchemes.includes(row.scheme);
         const typeMatch = type === 'all' || row.applicationTypeLabel === type;
         return schemeMatch && typeMatch;
     });
@@ -237,10 +275,9 @@ function updateTrendChart(approvedRows) {
 function updateSummaryTable() {
     if (!rows.length) return;
 
-    const scheme = document.getElementById('tableSchemeFilter').value;
     const type = document.getElementById('tableTypeFilter').value;
     const approvedRows = rows.filter(row => {
-        const schemeMatch = scheme === 'all' || row.scheme === scheme;
+        const schemeMatch = selectedTableSchemes.includes(row.scheme);
         const typeMatch = type === 'all' || row.applicationTypeLabel === type;
         return row.isApproved && schemeMatch && typeMatch;
     });
@@ -410,11 +447,122 @@ function switchTab(panelId) {
 
 function populateSelect(id, values, allLabel) {
     const select = document.getElementById(id);
-    const unique = [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const unique = getUniqueValues(values);
     select.innerHTML = [
         `<option value="all">${escapeHtml(allLabel)}</option>`,
         ...unique.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(toProperCaps(value))}</option>`)
     ].join('');
+}
+
+function getUniqueValues(values) {
+    return [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function setupMultiSelectEvents(config) {
+    document.getElementById(config.toggleId).addEventListener('click', event => {
+        event.stopPropagation();
+        toggleMultiSelectMenu(config.menuId, config.toggleId);
+    });
+    document.getElementById(config.selectAllButtonId).addEventListener('click', event => {
+        event.stopPropagation();
+        setMultiSelectSelection(config.selectedKey, getMultiSelectOptions(config.selectedKey));
+        refreshMultiSelect(config);
+        config.onChange();
+    });
+    document.getElementById(config.clearButtonId).addEventListener('click', event => {
+        event.stopPropagation();
+        setMultiSelectSelection(config.selectedKey, []);
+        refreshMultiSelect(config);
+        config.onChange();
+    });
+    document.getElementById(config.menuId).addEventListener('click', event => event.stopPropagation());
+}
+
+function renderMultiSelect(config) {
+    const optionsElement = document.getElementById(config.optionsId);
+    if (!config.options.length) {
+        optionsElement.innerHTML = '<div class="empty-state">Tiada skim dijumpai.</div>';
+        updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel);
+        return;
+    }
+
+    optionsElement.innerHTML = config.options.map((option, index) => {
+        const inputId = `${config.optionsId}-${index}`;
+        return `
+            <label for="${inputId}">
+                <input type="checkbox" id="${inputId}" value="${escapeHtml(option)}" ${config.selected.includes(option) ? 'checked' : ''}>
+                <span>${escapeHtml(toProperCaps(option))}</span>
+            </label>
+        `;
+    }).join('');
+
+    optionsElement.querySelectorAll('input[type="checkbox"]').forEach(input => {
+        input.addEventListener('change', () => {
+            const selected = [...optionsElement.querySelectorAll('input[type="checkbox"]:checked')].map(checkbox => checkbox.value);
+            setMultiSelectSelection(config.selectedKey, selected);
+            refreshMultiSelect(config);
+            config.onChange();
+        });
+    });
+    updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel);
+}
+
+function refreshMultiSelect(config) {
+    renderMultiSelect({
+        ...config,
+        allLabel: 'Semua skim',
+        options: getMultiSelectOptions(config.selectedKey),
+        selected: getMultiSelectSelection(config.selectedKey)
+    });
+}
+
+function getMultiSelectOptions(key) {
+    return key === 'table' ? tableSchemeOptions : schemeOptions;
+}
+
+function getMultiSelectSelection(key) {
+    return key === 'table' ? selectedTableSchemes : selectedSchemes;
+}
+
+function setMultiSelectSelection(key, selected) {
+    if (key === 'table') selectedTableSchemes = [...selected];
+    else selectedSchemes = [...selected];
+}
+
+function updateMultiSelectToggle(toggleId, selected, options, allLabel) {
+    const toggle = document.getElementById(toggleId);
+    if (!selected.length) {
+        toggle.textContent = 'Tiada skim dipilih';
+    } else if (selected.length === options.length) {
+        toggle.textContent = `${allLabel} (${options.length})`;
+    } else if (selected.length === 1) {
+        toggle.textContent = toProperCaps(selected[0]);
+    } else {
+        toggle.textContent = `${selected.length} skim dipilih`;
+    }
+}
+
+function toggleMultiSelectMenu(menuId, toggleId) {
+    const menu = document.getElementById(menuId);
+    const toggle = document.getElementById(toggleId);
+    const shouldOpen = menu.hidden;
+    closeMultiSelectMenus();
+    menu.hidden = !shouldOpen;
+    toggle.setAttribute('aria-expanded', String(shouldOpen));
+}
+
+function closeMultiSelectMenus() {
+    [
+        ['schemeFilterMenu', 'schemeFilterToggle'],
+        ['tableSchemeFilterMenu', 'tableSchemeFilterToggle']
+    ].forEach(([menuId, toggleId]) => {
+        const menu = document.getElementById(menuId);
+        const toggle = document.getElementById(toggleId);
+        if (menu && toggle) {
+            menu.hidden = true;
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+    });
 }
 
 function parseAppDate(value) {
