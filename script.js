@@ -26,7 +26,7 @@ const HOLIDAY_DATES_2026 = new Set([
 ]);
 
 const monthLabels = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogos', 'Sept', 'Okt', 'Nov', 'Dis'];
-const typeLabels = { new: 'Baharu', renewal: 'Penyambungan', appeal: 'Rayuan' };
+const typeLabels = { new: 'Baharu', renewal: 'Penyambungan', appeal: 'Rayuan', addrate: 'Tambah Kadar' };
 
 let headerMap = {};
 let rows = [];
