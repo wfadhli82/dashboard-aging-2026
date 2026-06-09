@@ -238,6 +238,7 @@ function updateDashboard() {
 
     updateKpis(filteredRows, approvedFilteredRows);
     updateTrendChart(approvedFilteredRows);
+    updateRankingTable(approvedFilteredRows);
 }
 
 function updateKpis(activeRows, approvedRows) {
@@ -270,6 +271,41 @@ function updateTrendChart(approvedRows) {
         : numerator;
 
     renderLineChart('trendChart', monthLabels, data, metricMode === 'percent');
+}
+
+function updateRankingTable(approvedRows) {
+    const grouped = new Map();
+    approvedRows.forEach(row => {
+        if (!grouped.has(row.scheme)) {
+            grouped.set(row.scheme, { scheme: row.scheme, approved: 0, onTime: 0 });
+        }
+        const item = grouped.get(row.scheme);
+        item.approved++;
+        if (row.aging <= 5) item.onTime++;
+    });
+
+    const rankingRows = [...grouped.values()]
+        .filter(item => item.approved > 0)
+        .map(item => ({
+            ...item,
+            percent: (item.onTime / item.approved) * 100
+        }))
+        .sort((a, b) => b.percent - a.percent || b.approved - a.approved || a.scheme.localeCompare(b.scheme));
+
+    const tbody = document.getElementById('rankingTableBody');
+    if (!rankingRows.length) {
+        tbody.innerHTML = '<tr><td class="empty-state" colspan="4">Tiada kelulusan untuk filter ini.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rankingRows.map((row, index) => `
+        <tr>
+            <td>${index + 1}</td>
+            <td>${escapeHtml(toProperCaps(row.scheme))}</td>
+            <td><span class="${getPerformanceBadgeClass(row.percent)}">${formatPercent(row.percent)}</span></td>
+            <td>${row.approved.toLocaleString('ms-MY')}</td>
+        </tr>
+    `).join('');
 }
 
 function updateSummaryTable() {
@@ -643,6 +679,12 @@ function formatShortDate(date) {
 
 function formatPercent(value) {
     return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function getPerformanceBadgeClass(percent) {
+    if (percent >= 80) return 'performance-badge good';
+    if (percent >= 50) return 'performance-badge warn';
+    return 'performance-badge risk';
 }
 
 function toProperCaps(value) {

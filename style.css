@@ -439,6 +439,21 @@ table {
     border-collapse: collapse;
 }
 
+.ranking-table {
+    min-width: 680px;
+}
+
+.ranking-table th:first-child,
+.ranking-table td:first-child {
+    width: 72px;
+    text-align: center;
+}
+
+.ranking-table th:nth-child(2),
+.ranking-table td:nth-child(2) {
+    text-align: left;
+}
+
 th,
 td {
     padding: 11px 12px;
@@ -468,6 +483,31 @@ tfoot td {
     color: var(--brand);
     background: #eef6fb;
     font-weight: 900;
+}
+
+.performance-badge {
+    display: inline-block;
+    min-width: 70px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 900;
+}
+
+.performance-badge.good {
+    color: #17694f;
+    background: #dff3eb;
+}
+
+.performance-badge.warn {
+    color: #745308;
+    background: #fff0c2;
+}
+
+.performance-badge.risk {
+    color: #913426;
+    background: #fde2dc;
 }
 
 .empty-state {
