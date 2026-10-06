@@ -4,6 +4,9 @@
 *.xls
 *.xlsm
 
+# Generated operational data must never be committed.
+data/bap-validation-live.json
+
 # Fail sementara sistem/editor
 .DS_Store
 Thumbs.db

@@ -3,6 +3,9 @@ const HEADER_ALIASES = {
     approvedAt: ['Tarikh Kelulusan'],
     scheme: ['Schemes â†’ Name', 'Schemes -> Name', 'Schemes → Name'],
     applicationType: ['Application Type'],
+    process: ['Process', 'Proses'],
+    status: ['Status'],
+    subBranch: ['Sub Branches → Name', 'Sub Branches -> Name'],
     branch: ['Branches â†’ Name', 'Branches -> Name', 'Branches → Name']
 };
 
@@ -26,7 +29,92 @@ const HOLIDAY_DATES_2026 = new Set([
 ]);
 
 const monthLabels = ['Jan', 'Feb', 'Mac', 'Apr', 'Mei', 'Jun', 'Jul', 'Ogos', 'Sept', 'Okt', 'Nov', 'Dis'];
+const defaultAgingThreshold = 5;
+const minAgingThreshold = 1;
+const maxAgingThreshold = 30;
+const agingThresholdStorageKey = 'dashboard-aging-threshold';
+const defaultUsernameDomain = 'maiwp.gov.my';
+const legacyUsernameDomain = 'dashboard.local';
+const visitorStaffRankingTitle = 'KEDUDUKAN 5 PENYIASAT TERTINGGI MENGIKUT BILANGAN URUSAN PENGUNJUNG';
 const typeLabels = { new: 'Baharu', renewal: 'Penyambungan', appeal: 'Rayuan', addrate: 'Tambah Kadar' };
+const applicationTypeOrder = ['new', 'renewal', 'appeal', 'addrate'];
+const applicationStatusKeys = ['processing', 'rejected', 'pending', 'cancel', 'terminated'];
+const applicationTypeColors = {
+    new: '#0f6bce',
+    renewal: '#00a88f',
+    appeal: '#d72657',
+    addrate: '#f4b400',
+    other: '#64748b'
+};
+const applicationChartDetailMeta = {
+    daily: { title: 'Carta Harian Permohonan' },
+    weekly: { title: 'Carta Mingguan Permohonan' },
+    monthly: { title: 'Carta Bulanan Permohonan' }
+};
+const pendingValidationMonthLabels = ['JAN', 'FEB', 'MAC', 'APRIL', 'MEI', 'JUN', 'JULAI', 'OGOS', 'SEPT', 'OKT', 'NOV', 'DIS'];
+const officerRoleConfigs = {
+    certifier: {
+        label: 'Peraku',
+        target: 15,
+        panelId: 'certifierPerformancePanel',
+        color: '#0f6bce'
+    },
+    approver: {
+        label: 'Pelulus',
+        target: 30,
+        panelId: 'approverPerformancePanel',
+        color: '#00a88f'
+    }
+};
+// Personal names must come from the authenticated data source, never from the
+// public application bundle. Keep local overrides empty unless they are loaded
+// from a protected configuration at runtime.
+const officerShortNameOverrides = new Map();
+const allowedOfficerNameKeys = null;
+const excludedApproverNames = new Set();
+const schemePengagihanPreset = [
+    'BANTUAN DEPOSIT SEWA RUMAH',
+    'BANTUAN KHAIRAT ASNAF',
+    'BANTUAN MENYELESAIKAN HUTANG',
+    'BANTUAN MUSIBAH',
+    'BANTUAN PERALATAN KESIHATAN',
+    'BANTUAN PERKAHWINAN',
+    'BANTUAN SARA HIDUP',
+    'BANTUAN AM PELAJARAN IPT DALAM NEGERI',
+    'BANTUAN PERSEDIAAN IPT',
+    'BANTUAN SEWA RUMAH BULANAN',
+    'BANTUAN PENYELESAIAN PEMBIAYAAN PINJAMAN PENDIDIKAN',
+    'BANTUAN PERUBATAN AM (AM/GENERAL)',
+    'BANTUAN PERUBATAN AM (PAMPERS)',
+    'BANTUAN PERUBATAN AM (PEMBEDAHAN)',
+    'BANTUAN PERUBATAN AM (SUSU)',
+    'BANTUAN AM PELAJARAN IPT LUAR NEGERI',
+    'BANTUAN DIALISIS',
+    'BANTUAN TAMBANG DAN KEPERLUAN DIRI DALAM NEGERI',
+    'BANTUAN TAMBANG DAN KEPERLUAN DIRI LUAR NEGERI',
+    'BANTUAN ORANG KELAINAN UPAYA (OKU)'
+];
+const schemePengagihanSet = new Set(schemePengagihanPreset);
+const schemeViewModeConfig = {
+    detailed: {
+        label: 'Skim Terperinci',
+        filterLabel: 'Skim Terperinci',
+        allLabel: 'Semua skim terperinci',
+        slug: 'skim-terperinci'
+    },
+    official: {
+        label: 'Skim Rasmi',
+        filterLabel: 'Skim Rasmi',
+        allLabel: 'Semua skim rasmi',
+        slug: 'skim-rasmi'
+    },
+    distribution: {
+        label: 'Skim Pengagihan',
+        filterLabel: 'Skim Pengagihan (Rasmi)',
+        allLabel: 'Semua skim pengagihan',
+        slug: 'skim-pengagihan'
+    }
+};
 
 let headerMap = {};
 let rows = [];
@@ -34,16 +122,79 @@ let filteredRows = [];
 let approvedFilteredRows = [];
 let schemeOptions = [];
 let tableSchemeOptions = [];
+let branchOptions = [];
+let tableBranchOptions = [];
 let selectedSchemes = [];
 let selectedTableSchemes = [];
+let selectedBranches = [];
+let selectedTableBranches = [];
+let selectedTypes = [];
+let selectedTableTypes = [];
+let typeOptions = [];
+let tableTypeOptions = [];
+let applicationRows = [];
+let officerRows = [];
+let pendingValidationRows = [];
+let pendingValidationTemplateRows = [];
+let pendingValidationBranchOptions = [];
+let selectedPendingValidationBranches = [];
+let currentPendingValidationRows = [];
+let showAllPendingValidationRows = false;
+let pendingValidationSearchTerm = '';
+let applicationBranchOptions = [];
+let applicationSchemeOptions = [];
+let applicationTypeOptions = [];
+let selectedApplicationBranches = [];
+let selectedApplicationSchemes = [];
+let selectedApplicationTypes = [];
 let metricMode = 'count';
+let schemeViewMode = 'detailed';
+let agingThreshold = defaultAgingThreshold;
 let currentSummaryRows = [];
 let dataRange = { first: null, last: null };
+let dailyZoom = { start: 0, end: 0 };
+let dailyZoomInitialized = false;
+let dailyLabels = [];
+let applicationChartData = {};
+let activeApplicationChartDetail = null;
+let supabaseClient = null;
+let supabaseLoadPromise = null;
+let supabaseLoadToken = 0;
+let latestRun = null;
+let latestVisitorRun = null;
+let visitorRows = [];
+let visitorStaffRows = [];
+let visitorDailyRows = [];
+let selectedVisitorMonth = 'all';
+let visitorDailyDateRange = { from: '', to: '' };
+let officerFilterState = {
+    certifier: { month: '', day: '', branch: 'all', scheme: 'all', type: 'all', mode: 'screen' },
+    approver: { month: '', day: '', branch: 'all', scheme: 'all', type: 'all', mode: 'screen' }
+};
+let officialSchemes = [];
+let mappingsBySystemScheme = new Map();
+let comparisonRuns = new Map();
+let comparisonAggregates = new Map();
+let comparisonAgingMode = 'count';
+let comparisonBranchOptions = [];
+let comparisonSchemeOptions = [];
+let comparisonTypeOptions = [];
+let selectedComparisonBranches = [];
+let selectedComparisonSchemes = [];
+let selectedComparisonTypes = [];
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('workingDayCount').textContent = getWorkingDaysIn2026().length;
-    document.getElementById('holidayCount').textContent = 365 - getWorkingDaysIn2026().length;
+    document.querySelectorAll('.working-day-count').forEach(element => {
+        element.textContent = getWorkingDaysIn2026().length;
+    });
+    document.querySelectorAll('.holiday-count').forEach(element => {
+        element.textContent = 365 - getWorkingDaysIn2026().length;
+    });
+    setupAgingThresholdControl();
 
+    document.getElementById('authForm').addEventListener('submit', handleLogin);
+    document.getElementById('profileButton').addEventListener('click', toggleProfileMenu);
+    document.getElementById('profileLogoutBtn').addEventListener('click', handleLogout);
     document.getElementById('chooseFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
     document.getElementById('fileInput').addEventListener('change', event => {
         if (event.target.files[0]) handleFile(event.target.files[0]);
@@ -52,29 +203,26 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.tab-button').forEach(button => {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
     });
-
-    document.getElementById('typeFilter').addEventListener('change', updateDashboard);
-
-    document.getElementById('tableTypeFilter').addEventListener('change', updateSummaryTable);
-    setupMultiSelectEvents({
-        clearButtonId: 'schemeClearBtn',
-        menuId: 'schemeFilterMenu',
-        onChange: updateDashboard,
-        optionsId: 'schemeFilterOptions',
-        selectAllButtonId: 'schemeSelectAllBtn',
-        selectedKey: 'dashboard',
-        toggleId: 'schemeFilterToggle'
+    document.querySelectorAll('[data-comparison-year]').forEach(input => input.addEventListener('change', updateComparisonDashboard));
+    document.querySelectorAll('input[name="comparisonAgingMode"]').forEach(input => {
+        input.addEventListener('change', event => {
+            comparisonAgingMode = event.target.value;
+            updateComparisonDashboard();
+        });
     });
-    setupMultiSelectEvents({
-        clearButtonId: 'tableSchemeClearBtn',
-        menuId: 'tableSchemeFilterMenu',
-        onChange: updateSummaryTable,
-        optionsId: 'tableSchemeFilterOptions',
-        selectAllButtonId: 'tableSchemeSelectAllBtn',
-        selectedKey: 'table',
-        toggleId: 'tableSchemeFilterToggle'
+    document.getElementById('drawerToggle').addEventListener('click', toggleDashboardDrawer);
+
+    getMultiSelectConfigs().forEach(setupMultiSelectEvents);
+    document.querySelectorAll('[data-scheme-mode]').forEach(input => {
+        input.addEventListener('change', event => {
+            if (event.target.checked) setSchemeViewMode(event.target.value);
+        });
     });
-    document.addEventListener('click', closeMultiSelectMenus);
+    document.addEventListener('click', () => {
+        closeMultiSelectMenus();
+        closeProfileMenu();
+        closeDashboardDrawer();
+    });
 
     document.querySelectorAll('input[name="metricMode"]').forEach(input => {
         input.addEventListener('change', event => {
@@ -82,9 +230,1000 @@ document.addEventListener('DOMContentLoaded', () => {
             updateTrendChart(approvedFilteredRows);
         });
     });
-
+    document.getElementById('dailyStartRange').addEventListener('input', updateDailyZoomFromInputs);
+    document.getElementById('dailyEndRange').addEventListener('input', updateDailyZoomFromInputs);
+    document.getElementById('dailyZoomResetBtn').addEventListener('click', resetDailyZoom);
+    document.querySelectorAll('[data-application-chart]').forEach(button => {
+        button.addEventListener('click', () => openApplicationChartDetail(button.dataset.applicationChart));
+    });
+    document.getElementById('applicationChartDetailBackBtn').addEventListener('click', closeApplicationChartDetail);
     document.getElementById('downloadSummaryBtn').addEventListener('click', downloadSummaryTable);
+    document.getElementById('downloadPendingValidationBtn').addEventListener('click', downloadPendingValidationExcel);
+    document.getElementById('downloadVisitorExcelBtn').addEventListener('click', downloadVisitorExcel);
+    document.getElementById('downloadVisitorPdfBtn').addEventListener('click', downloadVisitorPdf);
+    document.getElementById('visitorMonthFilter').addEventListener('change', event => {
+        selectedVisitorMonth = event.target.value;
+        updateVisitorDashboard();
+    });
+    document.getElementById('visitorDailyFromDate').addEventListener('change', event => {
+        visitorDailyDateRange.from = event.target.value;
+        renderVisitorDailyPazaTable();
+    });
+    document.getElementById('visitorDailyToDate').addEventListener('change', event => {
+        visitorDailyDateRange.to = event.target.value;
+        renderVisitorDailyPazaTable();
+    });
+    document.getElementById('visitorDailyResetBtn').addEventListener('click', resetVisitorDailyDateRange);
+    document.getElementById('pendingValidationShowAllRows').addEventListener('change', event => {
+        showAllPendingValidationRows = event.target.checked;
+        updatePendingValidationDashboard();
+    });
+    document.getElementById('pendingValidationSearch').addEventListener('input', event => {
+        pendingValidationSearchTerm = normalizeKey(event.target.value);
+        updatePendingValidationDashboard();
+    });
+    document.getElementById('pendingValidationScrollLeftBtn').addEventListener('click', () => scrollPendingValidationTable(-560));
+    document.getElementById('pendingValidationScrollRightBtn').addEventListener('click', () => scrollPendingValidationTable(560));
+    ['certifier', 'approver'].forEach(setupOfficerEvents);
+
+    initializeSupabase();
 });
+
+function setupOfficerEvents(role) {
+    ['Month', 'Day', 'Branch', 'Scheme', 'Type'].forEach(suffix => {
+        const element = document.getElementById(`${role}${suffix}Filter`);
+        if (!element) return;
+        element.addEventListener('change', event => {
+            officerFilterState[role][suffix.toLowerCase()] = event.target.value;
+            if (suffix === 'Month') {
+                populateOfficerDayFilter(role);
+            }
+            updateOfficerDashboard(role);
+        });
+    });
+    document.querySelectorAll(`input[name="${role}ViewMode"]`).forEach(input => {
+        input.addEventListener('change', event => {
+            officerFilterState[role].mode = event.target.value;
+            updateOfficerDashboard(role);
+        });
+    });
+    document.getElementById(`${role}CopySummaryBtn`)?.addEventListener('click', () => copyOfficerSummary(role));
+    document.getElementById(`${role}DownloadCsvBtn`)?.addEventListener('click', () => downloadOfficerCsv(role));
+}
+
+function setupAgingThresholdControl() {
+    const select = document.getElementById('agingThresholdSelect');
+    if (!select) return;
+    select.innerHTML = Array.from(
+        { length: maxAgingThreshold - minAgingThreshold + 1 },
+        (_item, index) => {
+            const value = minAgingThreshold + index;
+            return `<option value="${value}">${value}</option>`;
+        }
+    ).join('');
+    agingThreshold = getStoredAgingThreshold();
+    select.value = String(agingThreshold);
+    select.addEventListener('change', event => {
+        agingThreshold = clampAgingThreshold(event.target.value);
+        event.target.value = String(agingThreshold);
+        try {
+            window.localStorage?.setItem(agingThresholdStorageKey, String(agingThreshold));
+        } catch (_error) {
+            // Ignore storage errors; the selected value still applies for this session.
+        }
+        refreshAgingThresholdViews();
+        updateComparisonDashboard();
+    });
+    updateAgingThresholdLabels();
+}
+
+function getStoredAgingThreshold() {
+    try {
+        return clampAgingThreshold(window.localStorage?.getItem(agingThresholdStorageKey));
+    } catch (_error) {
+        return defaultAgingThreshold;
+    }
+}
+
+function clampAgingThreshold(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return defaultAgingThreshold;
+    return Math.min(maxAgingThreshold, Math.max(minAgingThreshold, Math.floor(parsed)));
+}
+
+function getAgingThresholdLabels() {
+    const lateStart = agingThreshold + 1;
+    return {
+        tab: `Dashboard Kelulusan ${agingThreshold} Hari`,
+        kicker: `Prestasi ${agingThreshold} hari`,
+        dashboardTitle: `Dashboard Kelulusan ${agingThreshold} Hari`,
+        onTime: `${agingThreshold} Hari Ke Bawah`,
+        late: `${lateStart} Hari Ke Atas`,
+        percent: `Peratus ${agingThreshold} Hari`,
+        trend: `Trend Kelulusan Dalam Tempoh ${agingThreshold} Hari Bekerja`,
+        ranking: `% Purata Kelulusan ${agingThreshold} Hari`,
+        latePercent: `% ${lateStart} Hari`
+    };
+}
+
+function updateAgingThresholdLabels() {
+    const labels = getAgingThresholdLabels();
+    setElementText('fiveDayTabButton', labels.tab);
+    setElementText('fiveDayKicker', labels.kicker);
+    setElementText('fiveDayTitle', labels.dashboardTitle);
+    setElementText('onTimeApplicationsLabel', labels.onTime);
+    setElementText('lateApplicationsLabel', labels.late);
+    setElementText('onTimePercentLabel', labels.percent);
+    setElementText('trendChartTitle', labels.trend);
+    setElementText('rankingPercentHeader', labels.ranking);
+    setElementText('summaryOnTimeHeader', labels.onTime);
+    setElementText('summaryLateHeader', labels.late);
+    setElementText('summaryOnTimePercentHeader', labels.ranking);
+    setElementText('summaryLatePercentHeader', labels.latePercent);
+    updateSchemeViewLabels();
+}
+
+function setElementText(id, text) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+}
+
+function refreshAgingThresholdViews() {
+    updateAgingThresholdLabels();
+    if (!rows.length) return;
+    updateDashboard();
+    updateSummaryTable();
+}
+
+function isWithinAgingThreshold(row) {
+    const value = Number(row?.aging);
+    return Number.isFinite(value) && value <= agingThreshold;
+}
+
+async function initializeSupabase() {
+    const config = window.DASHBOARD_SUPABASE_CONFIG || {};
+    if (!config.url || !config.anonKey) {
+        showAuthMessage('Supabase belum dikonfigurasi. Isi supabase-config.js atau guna fallback CSV lokal.', false);
+        return;
+    }
+    if (!window.supabase?.createClient) {
+        showAuthMessage('Library Supabase tidak dapat dimuatkan. Semak sambungan internet atau CDN.', true);
+        return;
+    }
+
+    supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+        updateAuthUi(session);
+        if (session) loadSupabaseData();
+    });
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+        showAuthMessage(error.message, true);
+        return;
+    }
+    updateAuthUi(data.session);
+    if (data.session) await loadSupabaseData();
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    clearError();
+    if (!supabaseClient) {
+        showAuthMessage('Supabase belum dikonfigurasi.', true);
+        return;
+    }
+
+    const username = document.getElementById('usernameInput').value.trim().toLowerCase();
+    const password = document.getElementById('passwordInput').value;
+    if (!username || !password) return;
+
+    const isEmail = username.includes('@');
+    if ((!isEmail && !/^[a-z0-9._-]+$/.test(username)) || (isEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username))) {
+        showAuthMessage('Masukkan nama pengguna atau alamat emel yang sah.', true);
+        return;
+    }
+    const email = isEmail ? username : `${username}@${defaultUsernameDomain}`;
+
+    const loginButton = document.getElementById('loginBtn');
+    loginButton.disabled = true;
+    loginButton.textContent = 'Sedang Log Masuk...';
+
+    const { error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+    });
+
+    if (error) {
+        showAuthMessage('Log masuk gagal. Semak nama pengguna dan kata laluan.', true);
+        loginButton.disabled = false;
+        loginButton.textContent = 'Log Masuk';
+        return;
+    }
+    document.getElementById('passwordInput').value = '';
+}
+
+async function handleLogout() {
+    supabaseLoadToken += 1;
+    supabaseLoadPromise = null;
+    if (supabaseClient) await supabaseClient.auth.signOut();
+    rows = [];
+    filteredRows = [];
+    approvedFilteredRows = [];
+    currentSummaryRows = [];
+    pendingValidationRows = [];
+    pendingValidationTemplateRows = [];
+    currentPendingValidationRows = [];
+    officerRows = [];
+    latestVisitorRun = null;
+    visitorRows = [];
+    visitorStaffRows = [];
+    visitorDailyRows = [];
+    visitorDailyDateRange = { from: '', to: '' };
+    latestRun = null;
+    schemeViewMode = 'detailed';
+    dailyZoom = { start: 0, end: 0 };
+    dailyZoomInitialized = false;
+    syncSchemeModeControls();
+    updateSchemeViewLabels();
+    dataRange = { first: null, last: null };
+    document.getElementById('dashboard').hidden = true;
+    document.getElementById('dateRangeText').textContent = 'Paparan prestasi kelulusan, permohonan masuk dan perakuan bantuan.';
+    updateAllDataRangeLabels();
+    document.getElementById('fileStatus').textContent = 'Belum ada fail dipilih.';
+    updateAuthUi(null);
+    closeProfileMenu();
+    showAuthMessage('Sesi telah ditamatkan.', false);
+}
+
+async function loadSupabaseData() {
+    if (supabaseLoadPromise) return supabaseLoadPromise;
+    const loadToken = ++supabaseLoadToken;
+    supabaseLoadPromise = loadSupabaseDataInternal(loadToken)
+        .finally(() => {
+            if (supabaseLoadToken === loadToken) supabaseLoadPromise = null;
+        });
+    return supabaseLoadPromise;
+}
+
+async function loadSupabaseDataInternal(loadToken) {
+    clearError();
+    showAuthMessage('Memuatkan data Supabase...', false);
+
+    const [v2RunResult, historicalRunResult] = await Promise.all([
+        supabaseClient
+            .from('dashboard_aging_runs_v2')
+            .select('run_id,data_start_date,data_end_date,generated_at,source_record_count,status,report_year,new_count,changed_count,unchanged_count,missing_count,comparison_match')
+            .eq('status', 'success')
+            .eq('comparison_match', true)
+            .order('generated_at', { ascending: false })
+            .limit(1),
+        supabaseClient
+            .from('dashboard_aging_runs')
+            .select('run_id,data_start_date,data_end_date,generated_at,source_record_count,status,report_year,is_historical,included_record_count,excluded_record_count')
+            .eq('status', 'success')
+            .eq('is_historical', true)
+            .eq('report_year', 2025)
+            .order('generated_at', { ascending: false })
+            .limit(1)
+    ]);
+    const { data: runRows, error: runError } = v2RunResult;
+
+    if (runError) {
+        showAuthMessage(`Data tidak dapat dibaca: ${runError.message}`, true);
+        return;
+    }
+    if (!runRows?.length) {
+        showAuthMessage('Tiada data Supabase ditemui untuk akaun ini.', true);
+        return;
+    }
+
+    latestRun = { ...runRows[0], is_historical: false };
+    comparisonRuns = new Map([[Number(latestRun.report_year || 2026), latestRun]]);
+    if (historicalRunResult.data?.[0]) comparisonRuns.set(2025, historicalRunResult.data[0]);
+    const [aggregateResult, dailyAggregateResult, officerDailyResult, officialResult, mappingResult, pendingTemplateResult, pendingRowsResult] = await Promise.all([
+        fetchAllAggregates(),
+        fetchAllDailyApplicationAggregates(),
+        fetchAllOfficerDailyAggregates(),
+        supabaseClient
+            .from('dashboard_official_schemes')
+            .select('name,cluster,display_order')
+            .order('display_order'),
+        supabaseClient
+            .from('dashboard_scheme_mappings')
+            .select('system_scheme,official_scheme,division'),
+        fetchPendingValidationTemplate(),
+        fetchAllPendingValidationRows(Number(latestRun.report_year || 2026))
+    ]);
+    const { data: aggregates, error: aggregateError } = aggregateResult;
+    const { data: dailyAggregates, error: dailyAggregateError } = dailyAggregateResult;
+    const { data: officerDailyAggregates, error: officerDailyError } = officerDailyResult;
+
+    if (aggregateError) {
+        showAuthMessage(`Agregat tidak dapat dibaca: ${aggregateError.message}`, true);
+        return;
+    }
+    if (officialResult.error || mappingResult.error) {
+        showAuthMessage(`Mapping skim tidak dapat dibaca: ${(officialResult.error || mappingResult.error).message}`, true);
+        return;
+    }
+
+    officialSchemes = officialResult.data || [];
+    mappingsBySystemScheme = new Map((mappingResult.data || []).map(item => [item.system_scheme, item]));
+    const comparisonResults = await Promise.all([...comparisonRuns.entries()].map(async ([year, run]) => {
+        if (year === Number(latestRun.report_year || 2026)) return [year, aggregates || []];
+        const result = await fetchAllLegacyAggregates(run.run_id);
+        if (result.error) throw result.error;
+        return [year, result.data || []];
+    }));
+    comparisonAggregates = new Map(comparisonResults);
+    pendingValidationTemplateRows = pendingTemplateResult.error ? [] : (pendingTemplateResult.data || []);
+    pendingValidationRows = pendingRowsResult.error ? [] : normalizePendingValidationRows(pendingRowsResult.data || []);
+    const visitorResult = await fetchLatestVisitorData();
+    latestVisitorRun = visitorResult.run;
+    visitorRows = normalizeVisitorAggregateRows(visitorResult.rows || []);
+    visitorStaffRows = normalizeVisitorStaffRows(visitorResult.staffRows || []);
+    visitorDailyRows = normalizeVisitorDailyRows(visitorResult.dailyRows || []);
+    setupVisitorDailyDateFilters();
+    if (supabaseLoadToken !== loadToken) return;
+
+    rows = applySchemeMappings(expandAggregateRows(aggregates || []));
+    applicationRows = applySchemeMappingsToApplicationRows(normalizeDailyApplicationRows(dailyAggregates || []));
+    officerRows = normalizeOfficerDailyRows(officerDailyAggregates || []);
+    if (!rows.length) {
+        showAuthMessage('Agregat Supabase kosong untuk run terkini.', true);
+        return;
+    }
+
+    dataRange = {
+        first: parseAppDate(latestRun.data_start_date) || getDateRange(rows).first,
+        last: parseAppDate(latestRun.data_end_date) || getDateRange(rows).last
+    };
+    setupFilters();
+    setupApplicationFilters();
+    updateSchemeViewLabels();
+    setupOfficerFilters();
+    setupPendingValidationFilters();
+    setupComparisonFilters();
+    updateDashboard();
+    updateSummaryTable();
+    updateApplicationDashboard();
+    updateOfficerDashboard('certifier');
+    updateOfficerDashboard('approver');
+    updatePendingValidationDashboard();
+    updateVisitorDashboard();
+    updateComparisonDashboard();
+    updateAllDataRangeLabels();
+
+    document.getElementById('fileStatus').textContent = `Data Supabase V2 dimuatkan (${Number(latestRun.source_record_count || rows.length).toLocaleString('ms-MY')} rekod sumber).`;
+    document.getElementById('dashboard').hidden = false;
+    const optionalErrors = [historicalRunResult.error, dailyAggregateError, officerDailyError, pendingTemplateResult.error, pendingRowsResult.error, visitorResult.error].filter(Boolean);
+    showAuthMessage(optionalErrors.length
+        ? `Data Supabase berjaya dimuatkan. Nota: sebahagian data tambahan belum tersedia (${optionalErrors.map(error => error.message).join('; ')}).`
+        : 'Data Supabase berjaya dimuatkan.', false);
+}
+
+function selectLatestRunsByYear(runRows) {
+    const selected = new Map();
+    runRows.forEach(run => {
+        const year = Number(run.report_year || String(run.data_start_date || '').slice(0, 4));
+        if ((year === 2025 || year === 2026) && !selected.has(year)) selected.set(year, run);
+    });
+    return selected;
+}
+
+async function fetchLatestVisitorData() {
+    const { data: runRows, error: runError } = await supabaseClient
+        .from('dashboard_visitor_sync_runs')
+        .select('run_id,started_at,finished_at,source_year,source_count,rows_read,rows_processed,unique_rows,duplicate_rows,parse_errors,aggregate_rows,status')
+        .eq('status', 'success')
+        .order('started_at', { ascending: false })
+        .limit(1);
+
+    if (runError) return { run: null, rows: [], staffRows: [], dailyRows: [], error: runError };
+    if (!runRows?.length) return { run: null, rows: [], staffRows: [], dailyRows: [], error: null };
+
+    const run = runRows[0];
+    const { data, error } = await supabaseClient
+        .from('dashboard_visitor_monthly_paza_aggregates')
+        .select('year,month,paza,visitor_count')
+        .eq('run_id', run.run_id)
+        .order('year')
+        .order('month')
+        .order('paza');
+
+    const staffResult = await fetchAllVisitorStaffAggregates(run.run_id);
+    const dailyResult = await fetchAllVisitorDailyPazaAggregates(run.run_id);
+
+    return {
+        run,
+        rows: data || [],
+        staffRows: staffResult.data || [],
+        dailyRows: dailyResult.data || [],
+        error: error || staffResult.error || dailyResult.error
+    };
+}
+
+async function fetchAllVisitorStaffAggregates(runId) {
+    const pageSize = 1000;
+    const data = [];
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_visitor_staff_aggregates')
+            .select('year,month,email_hash,staff_name,staff_paza,visitor_count,paza_breakdown')
+            .eq('run_id', runId)
+            .order('year')
+            .order('month')
+            .order('visitor_count', { ascending: false })
+            .range(start, start + pageSize - 1);
+
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+async function fetchAllVisitorDailyPazaAggregates(runId) {
+    const pageSize = 1000;
+    const data = [];
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_visitor_daily_paza_aggregates')
+            .select('visit_date,paza,visitor_count')
+            .eq('run_id', runId)
+            .order('visit_date')
+            .order('paza')
+            .range(start, start + pageSize - 1);
+
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+async function fetchAllAggregates(includeAgingDayCounts = true) {
+    const pageSize = 1000;
+    const data = [];
+    const fields = [
+        'year',
+        'month',
+        'branch',
+        'scheme',
+        'application_type',
+        'total_applications',
+        'approved_count',
+        'pending_count',
+        'approved_5_days_count',
+        'approved_over_5_days_count',
+        'status_migrated_count',
+        includeAgingDayCounts ? 'approved_aging_day_counts' : ''
+    ].filter(Boolean).join(',');
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_aging_aggregates_v2')
+            .select(fields)
+            .gt('total_applications', 0)
+            .order('year')
+            .order('month')
+            .order('branch')
+            .order('scheme')
+            .range(start, start + pageSize - 1);
+
+        if (error && includeAgingDayCounts && isMissingAgingDayCountsColumn(error)) {
+            return fetchAllAggregates(false);
+        }
+        if (error) return { data: null, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+async function fetchAllLegacyAggregates(runId, includeAgingDayCounts = true) {
+    const pageSize = 1000;
+    const data = [];
+    const fields = [
+        'year',
+        'month',
+        'branch',
+        'scheme',
+        'application_type',
+        'total_applications',
+        'approved_count',
+        'pending_count',
+        'approved_5_days_count',
+        'approved_over_5_days_count',
+        'status_migrated_count',
+        includeAgingDayCounts ? 'approved_aging_day_counts' : ''
+    ].filter(Boolean).join(',');
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_aging_aggregates')
+            .select(fields)
+            .eq('run_id', runId)
+            .order('year')
+            .order('month')
+            .order('branch')
+            .order('scheme')
+            .range(start, start + pageSize - 1);
+
+        if (error && includeAgingDayCounts && isMissingAgingDayCountsColumn(error)) {
+            return fetchAllLegacyAggregates(runId, false);
+        }
+        if (error) return { data: null, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+function isMissingAgingDayCountsColumn(error) {
+    const message = String(error?.message || error?.details || '');
+    return /approved_aging_day_counts/i.test(message)
+        && (/column .* does not exist/i.test(message) || /could not find/i.test(message));
+}
+
+async function fetchAllDailyApplicationAggregates() {
+    const pageSize = 1000;
+    const data = [];
+    const fields = [
+        'application_date',
+        'branch',
+        'scheme',
+        'application_type',
+        'total_applications',
+        'approved_count',
+        'pending_count',
+        'status_processing_count',
+        'status_rejected_count',
+        'status_pending_count',
+        'status_cancel_count',
+        'status_terminated_count'
+    ].join(',');
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_application_daily_aggregates_v2')
+            .select(fields)
+            .gt('total_applications', 0)
+            .order('application_date')
+            .order('branch')
+            .order('scheme')
+            .range(start, start + pageSize - 1);
+
+        if (error && isMissingStatusAggregateColumn(error)) return fetchAllDailyApplicationAggregatesWithoutStatus();
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+async function fetchAllDailyApplicationAggregatesWithoutStatus() {
+    const pageSize = 1000;
+    const data = [];
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_application_daily_aggregates_v2')
+            .select('application_date,branch,scheme,application_type,total_applications,approved_count,pending_count')
+            .gt('total_applications', 0)
+            .order('application_date')
+            .order('branch')
+            .order('scheme')
+            .range(start, start + pageSize - 1);
+
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+async function fetchAllOfficerDailyAggregates() {
+    const pageSize = 1000;
+    const data = [];
+    const fields = [
+        'role',
+        'work_date',
+        'officer_name',
+        'branch',
+        'sub_branch',
+        'scheme',
+        'application_type',
+        'completed_count'
+    ].join(',');
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_officer_daily_aggregates_v2')
+            .select(fields)
+            .gt('completed_count', 0)
+            .order('role')
+            .order('work_date')
+            .order('officer_name')
+            .range(start, start + pageSize - 1);
+
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+function isMissingStatusAggregateColumn(error) {
+    const message = String(error?.message || error?.details || '');
+    return /status_(processing|rejected|pending|cancel|terminated)_count/i.test(message)
+        || /column .* does not exist/i.test(message);
+}
+
+async function fetchPendingValidationTemplate() {
+    return supabaseClient
+        .from('dashboard_pending_validation_template')
+        .select('template_category,template_bil,template_scheme,template_detail,display_order')
+        .order('display_order');
+}
+
+async function fetchAllPendingValidationRows(reportYear) {
+    const pageSize = 1000;
+    const data = [];
+
+    for (let start = 0; ; start += pageSize) {
+        const { data: page, error } = await supabaseClient
+            .from('dashboard_pending_validation_aggregates_v2')
+            .select('report_year,application_month,branch,sub_branch,system_scheme,mapped_detail,template_category,template_bil,template_scheme,is_unmapped,application_count')
+            .eq('report_year', reportYear)
+            .gt('application_count', 0)
+            .order('branch')
+            .order('application_month')
+            .order('system_scheme')
+            .range(start, start + pageSize - 1);
+
+        if (error) return { data, error };
+        data.push(...(page || []));
+        if (!page || page.length < pageSize) return { data, error: null };
+    }
+}
+
+function expandAggregateRows(aggregates) {
+    const expanded = [];
+    aggregates.forEach(item => {
+        const year = Number(item.year);
+        const monthIndex = Number(item.month) - 1;
+        if (!Number.isFinite(year) || monthIndex < 0 || monthIndex > 11) return;
+
+        const scheme = item.scheme || '(Tiada skim)';
+        const applicationType = item.application_type || 'lain-lain';
+        const applicationTypeLabel = typeLabels[applicationType] || titleCase(applicationType);
+        const base = {
+            scheme,
+            branch: item.branch || '(Tiada cawangan)',
+            applicationType,
+            applicationTypeLabel
+        };
+
+        const agingDayCounts = normalizeAgingDayCounts(item.approved_aging_day_counts);
+        if (agingDayCounts.length) {
+            agingDayCounts.forEach(([aging, count]) => {
+                appendSyntheticRows(expanded, count, {
+                    ...base,
+                    appliedDate: new Date(year, monthIndex, 1),
+                    approvedDate: new Date(year, monthIndex, Math.max(1, Number(aging || 1))),
+                    aging,
+                    isApproved: true
+                });
+            });
+        } else {
+            appendSyntheticRows(expanded, item.approved_5_days_count, {
+                ...base,
+                appliedDate: new Date(year, monthIndex, 1),
+                approvedDate: new Date(year, monthIndex, 1),
+                aging: 5,
+                isApproved: true
+            });
+            appendSyntheticRows(expanded, item.approved_over_5_days_count, {
+                ...base,
+                appliedDate: new Date(year, monthIndex, 1),
+                approvedDate: new Date(year, monthIndex, 8),
+                aging: 6,
+                isApproved: true
+            });
+        }
+        appendSyntheticRows(expanded, item.pending_count, {
+            ...base,
+            appliedDate: new Date(year, monthIndex, 1),
+            approvedDate: null,
+            aging: null,
+            isApproved: false
+        });
+    });
+    return expanded;
+}
+
+function normalizeAgingDayCounts(value) {
+    let source = value;
+    if (typeof source === 'string') {
+        try {
+            source = JSON.parse(source);
+        } catch (_error) {
+            source = null;
+        }
+    }
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return [];
+    return Object.entries(source)
+        .map(([key, count]) => [Number(key), Number(count)])
+        .filter(([key, count]) => Number.isFinite(key) && Number.isFinite(count) && count > 0)
+        .sort((a, b) => a[0] - b[0]);
+}
+
+function applySchemeMappings(sourceRows) {
+    return sourceRows.map(row => {
+        const mapping = mappingsBySystemScheme.get(row.scheme);
+        if (!mapping) return null;
+        const official = officialSchemes.find(item => item.name === mapping.official_scheme);
+        if (!official) return null;
+        return {
+            ...row,
+            officialScheme: official.name,
+            cluster: official.cluster
+        };
+    }).filter(Boolean);
+}
+
+function setupComparisonFilters() {
+    const normalized = [...comparisonAggregates.values()].flat().map(item => {
+        const mapping = mappingsBySystemScheme.get(item.scheme);
+        return {
+            branch: item.branch || '(Tiada cawangan)',
+            officialScheme: mapping?.official_scheme || '',
+            applicationType: item.application_type || 'lain-lain'
+        };
+    });
+    comparisonBranchOptions = getUniqueValues(normalized.map(item => item.branch));
+    comparisonSchemeOptions = getUniqueValues(normalized.map(item => item.officialScheme));
+    comparisonTypeOptions = getUniqueValues(normalized.map(item => item.applicationType));
+    selectedComparisonBranches = [...comparisonBranchOptions];
+    selectedComparisonSchemes = [...comparisonSchemeOptions];
+    selectedComparisonTypes = [...comparisonTypeOptions];
+    getMultiSelectConfigs().filter(config => config.selectedKey.startsWith('comparison')).forEach(renderMultiSelect);
+}
+
+function updateComparisonDashboard() {
+    const panel = document.getElementById('comparisonPanel');
+    if (!panel || !comparisonAggregates.size) return;
+    const selectedYears = new Set([...document.querySelectorAll('[data-comparison-year]:checked')].map(input => Number(input.value)));
+    const yearly = [];
+    const tableRows = [];
+
+    [...comparisonAggregates.entries()].sort(([a], [b]) => a - b).forEach(([year, source]) => {
+        if (!selectedYears.has(year)) return;
+        const months = Array.from({ length: 12 }, () => ({ total: 0, approved: 0, onTime: 0, late: 0, agingDays: 0, agingCount: 0 }));
+        source.forEach(item => {
+            const mapping = mappingsBySystemScheme.get(item.scheme);
+            if (!selectedComparisonBranches.includes(item.branch)) return;
+            if (!selectedComparisonSchemes.includes(mapping?.official_scheme || '')) return;
+            if (!selectedComparisonTypes.includes(item.application_type || 'lain-lain')) return;
+            const index = Number(item.month) - 1;
+            if (index < 0 || index > 11) return;
+            months[index].total += Number(item.total_applications || 0);
+            months[index].approved += Number(item.approved_count || 0);
+            const agingCounts = normalizeAgingDayCounts(item.approved_aging_day_counts);
+            if (!agingCounts.length) {
+                months[index].onTime += Number(item.approved_5_days_count || 0);
+                months[index].late += Number(item.approved_over_5_days_count || 0);
+            }
+            agingCounts.forEach(([days, count]) => {
+                if (days <= agingThreshold) months[index].onTime += count;
+                else months[index].late += count;
+                months[index].agingDays += days * count;
+                months[index].agingCount += count;
+            });
+        });
+        const run = comparisonRuns.get(year);
+        const lastMonth = year === 2026 ? Math.max(0, Number(String(run?.data_end_date || '').slice(5, 7))) : 12;
+        const visibleMonths = months.slice(0, lastMonth || 12);
+        yearly.push({ year, months: visibleMonths, totals: visibleMonths.reduce((sum, month) => ({
+            total: sum.total + month.total,
+            approved: sum.approved + month.approved,
+            onTime: sum.onTime + month.onTime,
+            late: sum.late + month.late,
+            agingDays: sum.agingDays + month.agingDays,
+            agingCount: sum.agingCount + month.agingCount
+        }), { total: 0, approved: 0, onTime: 0, late: 0, agingDays: 0, agingCount: 0 }) });
+        visibleMonths.forEach((month, index) => tableRows.push({ year, month: index, ...month }));
+    });
+
+    renderComparisonKpis(yearly);
+    renderMultiSeriesLineChart('comparisonVolumeChart', monthLabels, yearly.map(item => ({ label: String(item.year), color: item.year === 2025 ? '#0f6bce' : '#d72657', data: item.months.map(month => month.total) })), { tooltipId: 'comparisonVolumeTooltip', valueLabels: 'none' });
+    const thresholdData = month => comparisonAgingMode === 'percent'
+        ? (month.approved ? (month.onTime / month.approved) * 100 : 0)
+        : month.onTime;
+    renderMultiSeriesLineChart('comparisonRateChart', monthLabels, yearly.map(item => ({ label: String(item.year), color: item.year === 2025 ? '#0f6bce' : '#d72657', data: item.months.map(thresholdData) })), { tooltipId: 'comparisonRateTooltip', valueLabels: 'none' });
+    renderMultiSeriesLineChart('comparisonAgingChart', monthLabels, yearly.map(item => ({ label: String(item.year), color: item.year === 2025 ? '#0f6bce' : '#d72657', data: item.months.map(month => month.agingCount ? month.agingDays / month.agingCount : 0) })), { tooltipId: 'comparisonAgingTooltip', valueLabels: 'none' });
+    renderComparisonTable(tableRows);
+    const note = [...comparisonRuns.entries()].sort(([a], [b]) => a - b).map(([year, run]) => `${year}: ${formatShortDate(parseAppDate(run.data_start_date))} hingga ${formatShortDate(parseAppDate(run.data_end_date))}`).join(' | ');
+    document.getElementById('comparisonDataNote').textContent = note || 'Data perbandingan belum tersedia.';
+    document.getElementById('comparisonThresholdChartTitle').textContent = `Kelulusan Dalam ${agingThreshold} Hari`;
+    document.getElementById('comparisonThresholdChartNote').textContent = comparisonAgingMode === 'percent'
+        ? `Peratus kelulusan dalam ${agingThreshold} hari daripada jumlah diluluskan.`
+        : `Bilangan permohonan diluluskan dalam ${agingThreshold} hari.`;
+    document.getElementById('comparisonOnTimeHeader').textContent = `${agingThreshold} Hari Ke Bawah`;
+    document.getElementById('comparisonLateHeader').textContent = `${agingThreshold + 1} Hari Ke Atas`;
+    document.getElementById('comparisonRateHeader').textContent = `Kadar ${agingThreshold} Hari`;
+}
+
+function renderComparisonKpis(yearly) {
+    const target = document.getElementById('comparisonKpis');
+    target.innerHTML = yearly.length ? yearly.map(item => {
+        const rate = item.totals.approved ? (item.totals.onTime / item.totals.approved) * 100 : 0;
+        return `<article class="comparison-year-summary"><h3>${item.year}</h3><dl><div><dt>Permohonan</dt><dd>${item.totals.total.toLocaleString('ms-MY')}</dd></div><div><dt>Lulus</dt><dd>${item.totals.approved.toLocaleString('ms-MY')}</dd></div><div><dt>${agingThreshold} hari</dt><dd>${item.totals.onTime.toLocaleString('ms-MY')}</dd></div><div><dt>Kadar ${agingThreshold} hari</dt><dd>${rate.toLocaleString('ms-MY', { maximumFractionDigits: 1 })}%</dd></div></dl></article>`;
+    }).join('') : '<p class="muted">Pilih sekurang-kurangnya satu tahun.</p>';
+}
+
+function renderComparisonTable(rowsToRender) {
+    const body = document.getElementById('comparisonTableBody');
+    body.innerHTML = rowsToRender.map(row => `<tr><td>${row.year}</td><td>${monthLabels[row.month]}</td><td>${row.total.toLocaleString('ms-MY')}</td><td>${row.approved.toLocaleString('ms-MY')}</td><td>${row.onTime.toLocaleString('ms-MY')}</td><td>${row.late.toLocaleString('ms-MY')}</td><td>${(row.approved ? row.onTime / row.approved * 100 : 0).toLocaleString('ms-MY', { maximumFractionDigits: 1 })}%</td><td>${(row.agingCount ? row.agingDays / row.agingCount : 0).toLocaleString('ms-MY', { maximumFractionDigits: 1 })}</td></tr>`).join('');
+    document.getElementById('comparisonVisibleRows').textContent = `${rowsToRender.length} baris dipapar`;
+}
+
+function normalizeDailyApplicationRows(aggregates) {
+    return aggregates.map(item => {
+        const appliedDate = parseAppDate(item.application_date);
+        if (!appliedDate) return null;
+
+        const applicationType = item.application_type || 'lain-lain';
+        const applicationTypeLabel = typeLabels[applicationType] || titleCase(applicationType);
+        return {
+            appliedDate,
+            dateKey: toIsoDate(appliedDate),
+            branch: item.branch || '(Tiada cawangan)',
+            scheme: item.scheme || '(Tiada skim)',
+            applicationType,
+            applicationTypeLabel,
+            totalApplications: Number(item.total_applications || 0),
+            approvedCount: Number(item.approved_count || 0),
+            pendingCount: Number(item.pending_count || 0),
+            statusCounts: {
+                processing: Number(item.status_processing_count || 0),
+                rejected: Number(item.status_rejected_count || 0),
+                pending: Number(item.status_pending_count || 0),
+                cancel: Number(item.status_cancel_count || 0),
+                terminated: Number(item.status_terminated_count || 0)
+            }
+        };
+    }).filter(Boolean);
+}
+
+function normalizeOfficerDailyRows(aggregates) {
+    return aggregates.map(item => {
+        const workDate = parseAppDate(item.work_date);
+        const role = item.role === 'approver' ? 'approver' : 'certifier';
+        const officerName = normalizeOfficerName(item.officer_name);
+        if (!workDate || !officerName) return null;
+        if (allowedOfficerNameKeys && !allowedOfficerNameKeys.has(normalizeKey(officerName))) return null;
+        if (role === 'approver' && excludedApproverNames.has(normalizeKey(officerName))) return null;
+
+        const scheme = item.scheme || '(Tiada skim)';
+        const mapping = mappingsBySystemScheme.get(scheme);
+        const official = mapping ? officialSchemes.find(option => option.name === mapping.official_scheme) : null;
+        const applicationType = item.application_type || 'lain-lain';
+        return {
+            role,
+            workDate,
+            dateKey: toIsoDate(workDate),
+            monthKey: `${workDate.getFullYear()}-${String(workDate.getMonth() + 1).padStart(2, '0')}`,
+            officerName,
+            displayName: getOfficerDisplayName(officerName),
+            branch: item.branch || '(Tiada cawangan)',
+            subBranch: item.sub_branch || '(Tiada sub cawangan)',
+            scheme,
+            displayScheme: official?.name || toProperCaps(scheme),
+            applicationType,
+            applicationTypeLabel: typeLabels[applicationType] || titleCase(applicationType),
+            completedCount: Number(item.completed_count || 0)
+        };
+    }).filter(Boolean);
+}
+
+function normalizeOfficerName(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function getOfficerDisplayName(fullName) {
+    const normalized = normalizeKey(fullName);
+    return officerShortNameOverrides.get(normalized) || normalizeOfficerName(fullName);
+}
+
+function autoShortOfficerName(fullName) {
+    const cleaned = normalizeOfficerName(fullName).replace(/\s+\(MAIWP\)$/i, '');
+    const parts = cleaned.split(/\s+/).filter(part => !/^(BIN|BINTI|BT|B)$/.test(part.toLocaleUpperCase('ms-MY')));
+    if (!parts.length) return cleaned || '-';
+    const first = parts[0];
+    const second = parts.find((part, index) => index > 0 && !/^MOHD$|^MUHAMMAD$|^MUHAMAD$|^AHMAD$/i.test(part));
+    return toProperCaps([first, second].filter(Boolean).join(' '));
+}
+
+function normalizePendingValidationRows(sourceRows) {
+    return sourceRows.map(row => ({
+        ...row,
+        appliedDate: parseAppDate(row.application_date || `${row.report_year}-${String(row.application_month || 1).padStart(2, '0')}-01`),
+        applicationMonth: Number(row.application_month || 0),
+        applicationCount: Number(row.application_count || 0),
+        branch: row.branch || '(Tiada cawangan)',
+        subBranch: row.sub_branch || 'TANPA PAZA',
+        systemScheme: row.system_scheme || '(Tiada skim)',
+        mappedDetail: row.mapped_detail || '',
+        templateCategory: row.template_category || '',
+        templateBil: row.template_bil,
+        templateScheme: row.template_scheme || '',
+        isUnmapped: Boolean(row.is_unmapped)
+    })).filter(row => row.appliedDate && row.applicationCount > 0);
+}
+
+function applySchemeMappingsToApplicationRows(sourceRows) {
+    return sourceRows.map(row => {
+        const mapping = mappingsBySystemScheme.get(row.scheme);
+        if (!mapping) return null;
+        const official = officialSchemes.find(item => item.name === mapping.official_scheme);
+        if (!official) return null;
+        return {
+            ...row,
+            officialScheme: official.name,
+            cluster: official.cluster
+        };
+    }).filter(Boolean);
+}
+
+function appendSyntheticRows(target, count, row) {
+    const total = Math.max(0, Number(count || 0));
+    for (let index = 0; index < total; index++) {
+        target.push({ ...row });
+    }
+}
+
+function updateAuthUi(session) {
+    const isLoggedIn = Boolean(session);
+    const email = session?.user?.email?.toLowerCase() || '';
+    const username = getDisplayUsername(email);
+    const uploadCard = document.getElementById('uploadCard');
+    document.getElementById('loginView').hidden = isLoggedIn;
+    document.getElementById('appContent').hidden = !isLoggedIn;
+    document.getElementById('loginBtn').disabled = false;
+    document.getElementById('loginBtn').textContent = 'Log Masuk';
+    document.getElementById('profileEmail').textContent = username || '-';
+    document.getElementById('profileInitial').textContent = username ? username.charAt(0).toUpperCase() : '?';
+    uploadCard.hidden = true;
+    uploadCard.style.display = 'none';
+}
+
+function getDisplayUsername(email) {
+    for (const domain of [defaultUsernameDomain, legacyUsernameDomain]) {
+        const suffix = `@${domain}`;
+        if (email.endsWith(suffix)) return email.slice(0, -suffix.length);
+    }
+    return email;
+}
+
+function toggleProfileMenu(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('profileMenu');
+    const button = document.getElementById('profileButton');
+    const shouldOpen = menu.hidden;
+    menu.hidden = !shouldOpen;
+    button.setAttribute('aria-expanded', String(shouldOpen));
+}
+
+function closeProfileMenu() {
+    const menu = document.getElementById('profileMenu');
+    const button = document.getElementById('profileButton');
+    if (!menu || !button) return;
+    menu.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+}
+
+function showAuthMessage(message, isError) {
+    const element = document.getElementById('authMessage');
+    element.hidden = false;
+    element.textContent = message;
+    element.className = `message ${isError ? 'error' : 'info'}`;
+}
 
 function handleFile(file) {
     clearError();
@@ -98,16 +1237,17 @@ function handleFile(file) {
         try {
             const parsed = parseCsv(event.target.result);
             headerMap = resolveHeaders(parsed.headers);
-            rows = normalizeRows(parsed.records);
+            rows = applySchemeMappings(normalizeRows(parsed.records));
             if (!rows.length) throw new Error('Tiada rekod tarikh permohonan yang sah dijumpai.');
 
             dataRange = getDateRange(rows);
             setupFilters();
+            updateSchemeViewLabels();
             updateDashboard();
             updateSummaryTable();
+            updateAllDataRangeLabels();
 
             document.getElementById('fileStatus').textContent = `${file.name} dimuatkan (${rows.length.toLocaleString('ms-MY')} rekod).`;
-            document.getElementById('dateRangeText').textContent = `Data permohonan: ${formatShortDate(dataRange.first)} hingga ${formatShortDate(dataRange.last)}.`;
             document.getElementById('dashboard').hidden = false;
         } catch (error) {
             showError(error.message);
@@ -167,15 +1307,30 @@ function parseCsv(text) {
 
 function resolveHeaders(headers) {
     const map = {};
+    const normalized = new Map(headers.map(header => [normalizeHeader(header), header]));
     Object.entries(HEADER_ALIASES).forEach(([field, aliases]) => {
-        map[field] = aliases.find(alias => headers.includes(alias));
+        const match = aliases.find(alias => normalized.has(normalizeHeader(alias)));
+        map[field] = match ? normalized.get(normalizeHeader(match)) : undefined;
     });
+    if (!map.scheme) {
+        map.scheme = headers.find(header => /^schemes\b.*name$/i.test(normalizeHeader(header)));
+    }
+    if (!map.branch) {
+        map.branch = headers.find(header => /^branches\b.*name$/i.test(normalizeHeader(header)));
+    }
+    if (!map.subBranch) {
+        map.subBranch = headers.find(header => /^sub\s+branches\b.*name$/i.test(normalizeHeader(header)));
+    }
 
     const missing = REQUIRED_FIELDS.filter(field => !map[field]).map(field => HEADER_ALIASES[field][0]);
     if (missing.length) {
         throw new Error(`Header CSV tidak lengkap. Tiada: ${missing.join(', ')}`);
     }
     return map;
+}
+
+function normalizeHeader(value) {
+    return String(value || '').trim().toLowerCase();
 }
 
 function normalizeRows(records) {
@@ -185,54 +1340,246 @@ function normalizeRows(records) {
         if (!appliedDate) return null;
 
         const type = (record[headerMap.applicationType] || '').toLowerCase();
-        const isApproved = Boolean(approvedDate);
+        const applicationState = getApplicationState(record, approvedDate);
+        if (applicationState === 'rejected') return null;
+        const isApproved = applicationState === 'approved';
         return {
             appliedDate,
             approvedDate,
             aging: isApproved ? calculateWorkingDays(appliedDate, approvedDate) : null,
             isApproved,
             scheme: record[headerMap.scheme] || '(Tiada skim)',
-            branch: headerMap.branch ? (record[headerMap.branch] || '(Tiada cawangan)') : '(Tiada cawangan)',
+            branch: headerMap.subBranch
+                ? (record[headerMap.subBranch] || '(Tiada cawangan)')
+                : (headerMap.branch ? (record[headerMap.branch] || '(Tiada cawangan)') : '(Tiada cawangan)'),
             applicationType: type,
             applicationTypeLabel: typeLabels[type] || titleCase(type || 'Lain-lain')
         };
     }).filter(Boolean);
 }
 
+function getApplicationState(record, approvedDate) {
+    const process = normalizeHeader(headerMap.process ? record[headerMap.process] : '');
+    const status = normalizeHeader(headerMap.status ? record[headerMap.status] : '');
+
+    if (process === 'approval' && status === 'rejected') return 'rejected';
+    if (approvedDate && process === 'payment' && status === 'processing') return 'approved';
+    if (approvedDate && (!process || !status)) return 'approved';
+    return 'pending';
+}
+
 function setupFilters() {
-    schemeOptions = getUniqueValues(rows.map(row => row.scheme));
+    branchOptions = getUniqueValues(rows.map(row => row.branch));
+    tableBranchOptions = [...branchOptions];
+    schemeOptions = getSchemeViewOptions(rows);
     tableSchemeOptions = [...schemeOptions];
+    typeOptions = getUniqueValues(rows.map(row => row.applicationTypeLabel));
+    tableTypeOptions = [...typeOptions];
+    selectedBranches = [...branchOptions];
+    selectedTableBranches = [...tableBranchOptions];
     selectedSchemes = [...schemeOptions];
     selectedTableSchemes = [...tableSchemeOptions];
-    renderMultiSelect({
-        allLabel: 'Semua skim',
-        onChange: updateDashboard,
-        options: schemeOptions,
-        optionsId: 'schemeFilterOptions',
-        selected: selectedSchemes,
-        selectedKey: 'dashboard',
-        toggleId: 'schemeFilterToggle'
+    selectedTypes = [...typeOptions];
+    selectedTableTypes = [...tableTypeOptions];
+}
+
+function setupApplicationFilters() {
+    applicationBranchOptions = getUniqueValues(applicationRows.map(row => row.branch));
+    applicationSchemeOptions = getSchemeViewOptions(applicationRows);
+    applicationTypeOptions = getUniqueValues(applicationRows.map(row => row.applicationTypeLabel));
+    selectedApplicationBranches = [...applicationBranchOptions];
+    selectedApplicationSchemes = [...applicationSchemeOptions];
+    selectedApplicationTypes = [...applicationTypeOptions];
+    getMultiSelectConfigs().forEach(renderMultiSelect);
+}
+
+function setSchemeViewMode(mode) {
+    if (!schemeViewModeConfig[mode] || mode === schemeViewMode) {
+        syncSchemeModeControls();
+        return;
+    }
+
+    schemeViewMode = mode;
+    syncSchemeModeControls();
+    schemeOptions = getSchemeViewOptions(rows);
+    tableSchemeOptions = [...schemeOptions];
+    applicationSchemeOptions = getSchemeViewOptions(applicationRows);
+    selectedSchemes = [...schemeOptions];
+    selectedTableSchemes = [...tableSchemeOptions];
+    selectedApplicationSchemes = [...applicationSchemeOptions];
+    updateSchemeViewLabels();
+
+    ['dashboardScheme', 'tableScheme', 'applicationScheme'].forEach(selectedKey => {
+        const config = getMultiSelectConfigs().find(item => item.selectedKey === selectedKey);
+        if (config) refreshMultiSelect(config);
     });
-    renderMultiSelect({
-        allLabel: 'Semua skim',
-        onChange: updateSummaryTable,
-        options: tableSchemeOptions,
-        optionsId: 'tableSchemeFilterOptions',
-        selected: selectedTableSchemes,
-        selectedKey: 'table',
-        toggleId: 'tableSchemeFilterToggle'
+
+    if (!rows.length) return;
+    updateDashboard();
+    updateSummaryTable();
+    if (applicationRows.length) updateApplicationDashboard();
+}
+
+function syncSchemeModeControls() {
+    document.querySelectorAll('[data-scheme-mode]').forEach(input => {
+        input.checked = input.value === schemeViewMode;
     });
-    populateSelect('typeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
-    populateSelect('tableTypeFilter', rows.map(row => row.applicationTypeLabel), 'Semua jenis');
+}
+
+function getSchemeViewRows(sourceRows) {
+    if (schemeViewMode !== 'distribution') return sourceRows;
+    return sourceRows.filter(row => schemePengagihanSet.has(row.scheme));
+}
+
+function getSchemeViewValue(row) {
+    return schemeViewMode === 'detailed' ? row.scheme : row.officialScheme;
+}
+
+function getSchemeViewOptions(sourceRows) {
+    return getUniqueValues(getSchemeViewRows(sourceRows).map(getSchemeViewValue));
+}
+
+function getSchemeViewLabels() {
+    return schemeViewModeConfig[schemeViewMode];
+}
+
+function updateSchemeViewLabels() {
+    const config = getSchemeViewLabels();
+    setElementText('fiveDayTitle', `Dashboard Kelulusan ${agingThreshold} Hari - ${config.label}`);
+    setElementText('applicationTitle', `Analisis Permohonan Masuk - ${config.label}`);
+    setElementText('performanceTitle', `Jadual Prestasi Keseluruhan - ${config.label}`);
+    setElementText('trendChartTitle', `Trend Kelulusan Dalam Tempoh ${agingThreshold} Hari Bekerja - ${config.label}`);
+    setElementText('dashboardSchemeFilterLabel', config.filterLabel);
+    setElementText('applicationSchemeFilterLabel', config.filterLabel);
+    setElementText('tableSchemeFilterLabel', config.filterLabel);
+    setElementText('rankingTitle', `Ranking Prestasi ${config.label}`);
+    setElementText('rankingSchemeHeader', config.filterLabel);
+    setElementText('applicationTopSchemesTitle', `Top ${config.label}`);
+}
+
+function setupOfficerFilters() {
+    Object.keys(officerRoleConfigs).forEach(role => {
+        const rowsForRole = officerRows.filter(row => row.role === role);
+        const months = getOfficerMonthOptions(rowsForRole);
+        const latestMonth = months.length ? months[months.length - 1].value : '';
+        officerFilterState[role] = {
+            month: latestMonth,
+            day: '',
+            branch: 'all',
+            scheme: 'all',
+            type: 'all',
+            mode: officerFilterState[role]?.mode || 'screen'
+        };
+        populateOfficerSelect(`${role}MonthFilter`, months, 'Tiada bulan', false);
+        if (latestMonth) document.getElementById(`${role}MonthFilter`).value = latestMonth;
+        populateOfficerDayFilter(role);
+        populateOfficerSelect(`${role}BranchFilter`, getUniqueValues(rowsForRole.map(row => row.branch)).map(toOption), 'Semua cawangan');
+        populateOfficerSelect(`${role}SchemeFilter`, getUniqueValues(rowsForRole.map(row => row.displayScheme)).map(toOption), 'Semua skim');
+        populateOfficerSelect(`${role}TypeFilter`, getUniqueValues(rowsForRole.map(row => row.applicationTypeLabel)).map(toOption), 'Semua jenis');
+        const selectedMode = officerFilterState[role].mode;
+        document.querySelectorAll(`input[name="${role}ViewMode"]`).forEach(input => {
+            input.checked = input.value === selectedMode;
+        });
+    });
+}
+
+function getOfficerMonthOptions(rowsForRole) {
+    return [...new Set(rowsForRole.map(row => row.monthKey))]
+        .sort()
+        .map(monthKey => {
+            const [, month] = monthKey.split('-').map(Number);
+            return { value: monthKey, label: monthLabels[month - 1] };
+        });
+}
+
+function populateOfficerDayFilter(role) {
+    const state = officerFilterState[role];
+    const rowsForMonth = officerRows.filter(row => row.role === role && (!state.month || row.monthKey === state.month));
+    const days = [...new Set(rowsForMonth.map(row => row.dateKey))]
+        .sort()
+        .map(dateKey => ({ value: dateKey, label: formatDateFromIso(dateKey) }));
+    const previousDay = state.day;
+    const latestDay = days.length ? days[days.length - 1].value : '';
+    state.day = days.some(option => option.value === previousDay) ? previousDay : latestDay;
+    populateOfficerSelect(`${role}DayFilter`, days, 'Tiada hari', false);
+    const element = document.getElementById(`${role}DayFilter`);
+    if (element && state.day) element.value = state.day;
+}
+
+function toOption(value) {
+    return { value, label: value };
+}
+
+function populateOfficerSelect(id, options, allLabel, includeAll = true) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const allOption = includeAll ? [`<option value="all">${escapeHtml(allLabel)}</option>`] : [];
+    const optionHtml = options.length
+        ? options.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+        : [`<option value="">${escapeHtml(allLabel)}</option>`];
+    element.innerHTML = [...allOption, ...optionHtml].join('');
+}
+
+function setupPendingValidationFilters() {
+    pendingValidationBranchOptions = getUniqueValues(pendingValidationRows.map(row => row.branch));
+    selectedPendingValidationBranches = [...pendingValidationBranchOptions];
+    const downloadSelect = document.getElementById('pendingValidationDownloadBranch');
+    if (downloadSelect) {
+        downloadSelect.innerHTML = pendingValidationBranchOptions
+            .map(branch => `<option value="${escapeHtml(branch)}">${escapeHtml(branch)}</option>`)
+            .join('');
+        if (pendingValidationBranchOptions.includes('KUALA LUMPUR')) {
+            downloadSelect.value = 'KUALA LUMPUR';
+        }
+    }
+    getMultiSelectConfigs().forEach(renderMultiSelect);
+}
+
+function getMultiSelectConfigs() {
+    const schemeLabels = getSchemeViewLabels();
+    const preserveSchemeCase = schemeViewMode !== 'detailed';
+    return [
+        multiConfig('dashboardBranch', 'Semua cawangan', 'branchFilter', updateDashboard),
+        multiConfig('dashboardScheme', schemeLabels.allLabel, 'schemeFilter', updateDashboard, preserveSchemeCase),
+        multiConfig('dashboardType', 'Semua jenis', 'typeFilter', updateDashboard),
+        multiConfig('tableBranch', 'Semua cawangan', 'tableBranchFilter', updateSummaryTable),
+        multiConfig('tableScheme', schemeLabels.allLabel, 'tableSchemeFilter', updateSummaryTable, preserveSchemeCase),
+        multiConfig('tableType', 'Semua jenis', 'tableTypeFilter', updateSummaryTable),
+        multiConfig('applicationBranch', 'Semua cawangan', 'applicationBranchFilter', updateApplicationDashboard),
+        multiConfig('applicationScheme', schemeLabels.allLabel, 'applicationSchemeFilter', updateApplicationDashboard, preserveSchemeCase),
+        multiConfig('applicationType', 'Semua jenis', 'applicationTypeFilter', updateApplicationDashboard),
+        multiConfig('pendingValidationBranch', 'Semua cawangan', 'pendingValidationBranchFilter', updatePendingValidationDashboard, true),
+        multiConfig('comparisonBranch', 'Semua cawangan', 'comparisonBranchFilter', updateComparisonDashboard, true),
+        multiConfig('comparisonScheme', 'Semua skim rasmi', 'comparisonSchemeFilter', updateComparisonDashboard, true),
+        multiConfig('comparisonType', 'Semua jenis', 'comparisonTypeFilter', updateComparisonDashboard)
+    ];
+}
+
+function multiConfig(selectedKey, allLabel, prefix, onChange, preserveCase = false) {
+    return {
+        allLabel,
+        clearButtonId: `${prefix}ClearBtn`,
+        menuId: `${prefix}Menu`,
+        onChange,
+        options: getMultiSelectOptions(selectedKey),
+        optionsId: `${prefix}Options`,
+        emptyLabel: allLabel.includes('cawangan')
+            ? 'Tiada cawangan dipilih'
+            : (allLabel.includes('jenis') ? 'Tiada jenis dipilih' : 'Tiada skim dipilih'),
+        preserveCase,
+        selectAllButtonId: `${prefix}SelectAllBtn`,
+        selected: getMultiSelectSelection(selectedKey),
+        selectedKey,
+        toggleId: `${prefix}Toggle`
+    };
 }
 
 function updateDashboard() {
-    const type = document.getElementById('typeFilter').value;
-
-    filteredRows = rows.filter(row => {
-        const schemeMatch = selectedSchemes.includes(row.scheme);
-        const typeMatch = type === 'all' || row.applicationTypeLabel === type;
-        return schemeMatch && typeMatch;
+    filteredRows = getSchemeViewRows(rows).filter(row => {
+        const branchMatch = selectedBranches.includes(row.branch);
+        const schemeMatch = selectedSchemes.includes(getSchemeViewValue(row));
+        const typeMatch = selectedTypes.includes(row.applicationTypeLabel);
+        return branchMatch && schemeMatch && typeMatch;
     });
     approvedFilteredRows = filteredRows.filter(row => row.isApproved);
 
@@ -241,11 +1588,1087 @@ function updateDashboard() {
     updateRankingTable(approvedFilteredRows);
 }
 
+function updateApplicationDashboard() {
+    const activeRows = getSchemeViewRows(applicationRows).filter(row => {
+        return selectedApplicationBranches.includes(row.branch)
+            && selectedApplicationSchemes.includes(getSchemeViewValue(row))
+            && selectedApplicationTypes.includes(row.applicationTypeLabel);
+    });
+
+    const range = getApplicationAggregateRange(activeRows);
+
+    updateApplicationKpis(activeRows);
+    updateApplicationCharts(activeRows);
+    updateApplicationLeaderboards(activeRows);
+}
+
+function updateOfficerDashboard(role) {
+    const config = officerRoleConfigs[role];
+    if (!config) return;
+
+    const { isManagement, screenMetrics, managementMetrics, currentMetrics } = getOfficerDashboardMetrics(role, config);
+    updateOfficerKpis(role, currentMetrics, config);
+    renderOfficerLeaderboard(role, screenMetrics, config);
+    renderOfficerManagement(role, managementMetrics, config);
+    document.getElementById(`${role}ScreenView`).hidden = isManagement;
+    document.getElementById(`${role}ManagementView`).hidden = !isManagement;
+}
+
+function getOfficerDashboardMetrics(role, config) {
+    const isManagement = officerFilterState[role].mode === 'management';
+    const monthRows = getFilteredOfficerRows(role, { applyDay: false });
+    const screenRows = getFilteredOfficerRows(role, { applyDay: true });
+    const selectedDay = officerFilterState[role].day;
+    const screenMetrics = buildOfficerMetrics(screenRows, config.target, role, {
+        dateKeys: selectedDay ? [selectedDay] : undefined,
+        rosterRows: monthRows
+    });
+    const managementMetrics = buildOfficerMetrics(monthRows, config.target, role);
+    return {
+        isManagement,
+        screenMetrics,
+        managementMetrics,
+        currentMetrics: isManagement ? managementMetrics : screenMetrics
+    };
+}
+
+function getFilteredOfficerRows(role, options = {}) {
+    const state = officerFilterState[role];
+    const applyDay = Boolean(options.applyDay);
+    return officerRows.filter(row => {
+        return row.role === role
+            && (!state.month || row.monthKey === state.month)
+            && (!applyDay || !state.day || row.dateKey === state.day)
+            && (state.branch === 'all' || row.branch === state.branch)
+            && (state.scheme === 'all' || row.displayScheme === state.scheme)
+            && (state.type === 'all' || row.applicationTypeLabel === state.type);
+    });
+}
+
+function buildOfficerMetrics(activeRows, target, role, options = {}) {
+    const dates = options.dateKeys || getOfficerWorkingDateKeys(activeRows);
+    const sortedActiveDates = activeRows.map(row => row.dateKey).sort();
+    const latestDate = dates.length ? dates[dates.length - 1] : (sortedActiveDates.length ? sortedActiveDates[sortedActiveDates.length - 1] : '');
+    const officers = new Map();
+    const dailyTotals = new Map();
+    const officerDayCounts = new Map();
+
+    const rosterRows = options.rosterRows?.length ? options.rosterRows : activeRows;
+    rosterRows.forEach(row => {
+        const officerKey = normalizeKey(row.officerName);
+        if (!officers.has(officerKey)) {
+            officers.set(officerKey, {
+                officerName: row.officerName,
+                displayName: row.displayName,
+                total: 0,
+                latestCount: 0,
+                hitDays: 0,
+                dayCounts: new Map()
+            });
+        }
+    });
+
+    activeRows.forEach(row => {
+        const officerKey = normalizeKey(row.officerName);
+        if (!officers.has(officerKey)) {
+            officers.set(officerKey, {
+                officerName: row.officerName,
+                displayName: row.displayName,
+                total: 0,
+                latestCount: 0,
+                hitDays: 0,
+                dayCounts: new Map()
+            });
+        }
+        const officer = officers.get(officerKey);
+        officer.total += row.completedCount;
+        officer.dayCounts.set(row.dateKey, (officer.dayCounts.get(row.dateKey) || 0) + row.completedCount);
+        dailyTotals.set(row.dateKey, (dailyTotals.get(row.dateKey) || 0) + row.completedCount);
+    });
+
+    const officerItems = [...officers.values()].map(officer => {
+        dates.forEach(dateKey => {
+            const count = officer.dayCounts.get(dateKey) || 0;
+            if (count >= target) officer.hitDays++;
+            officerDayCounts.set(`${officer.officerName}\u001f${dateKey}`, count);
+        });
+        officer.latestCount = latestDate ? (officer.dayCounts.get(latestDate) || 0) : 0;
+        officer.latestGap = Math.max(target - officer.latestCount, 0);
+        officer.average = dates.length ? officer.total / dates.length : 0;
+        officer.hitPercent = dates.length ? (officer.hitDays / dates.length) * 100 : 0;
+        return officer;
+    }).sort((a, b) => b.latestCount - a.latestCount || b.total - a.total || a.displayName.localeCompare(b.displayName, 'ms-MY'));
+
+    const totalCompleted = officerItems.reduce((sum, item) => sum + item.total, 0);
+    const latestHitCount = officerItems.filter(item => item.latestCount >= target).length;
+    const latestGap = officerItems.reduce((sum, item) => sum + item.latestGap, 0);
+    const possibleOfficerDays = officerItems.length * dates.length;
+    const achievedOfficerDays = officerItems.reduce((sum, item) => sum + item.hitDays, 0);
+    const monthLabel = formatOfficerSelectedMonth(role);
+
+    return {
+        activeRows,
+        dates,
+        dailyTotals,
+        officerItems,
+        officerDayCounts,
+        latestDate,
+        totalCompleted,
+        dailyAverage: dates.length ? totalCompleted / dates.length : 0,
+        latestHitCount,
+        latestGap,
+        hitRate: possibleOfficerDays ? (achievedOfficerDays / possibleOfficerDays) * 100 : 0,
+        achievedOfficerDays,
+        possibleOfficerDays,
+        monthLabel,
+        periodLabel: dates.length === 1 ? formatDateFromIso(dates[0]) : monthLabel
+    };
+}
+
+function getOfficerWorkingDateKeys(activeRows) {
+    const range = getDateRangeFromDates(activeRows.map(row => row.workDate));
+    if (!range.first || !range.last) return [];
+    const keys = [];
+    const current = toDateOnly(range.first);
+    const end = toDateOnly(range.last);
+    while (current <= end) {
+        if (isWorkingDay(current)) keys.push(toIsoDate(current));
+        current.setDate(current.getDate() + 1);
+    }
+    return keys;
+}
+
+function updateOfficerKpis(role, metrics, config) {
+    document.getElementById(`${role}TotalCompleted`).textContent = metrics.totalCompleted.toLocaleString('ms-MY');
+    document.getElementById(`${role}DailyAverage`).textContent = metrics.dailyAverage.toFixed(1);
+    document.getElementById(`${role}HitRate`).textContent = `${metrics.hitRate.toFixed(1)}%`;
+    document.getElementById(`${role}HitRateNote`).textContent = metrics.possibleOfficerDays
+        ? `(${metrics.achievedOfficerDays.toLocaleString('ms-MY')} / ${metrics.possibleOfficerDays.toLocaleString('ms-MY')} hari pegawai)`
+        : '(Tiada data)';
+    document.getElementById(`${role}LatestHitCount`).textContent = metrics.latestHitCount.toLocaleString('ms-MY');
+    document.getElementById(`${role}LatestDateNote`).textContent = metrics.latestDate
+        ? `(${formatDateFromIso(metrics.latestDate)}, target ${config.target})`
+        : '(Tiada data)';
+    document.getElementById(`${role}LatestGap`).textContent = metrics.latestGap.toLocaleString('ms-MY');
+}
+
+function renderOfficerLeaderboard(role, metrics, config) {
+    const element = document.getElementById(`${role}Leaderboard`);
+    if (!metrics.officerItems.length) {
+        element.innerHTML = '<article class="table-card"><h2>Tiada data prestasi harian.</h2><p class="muted">Jalankan schema dan import CSV weekly terkini untuk paparan ini.</p></article>';
+        return;
+    }
+    element.innerHTML = metrics.officerItems.map((item, index) => {
+        const percent = config.target ? (item.latestCount / config.target) * 100 : 0;
+        const status = percent >= 100 ? 'hit' : (percent >= 80 ? 'near' : 'miss');
+        const label = status === 'hit' ? 'Capai' : (status === 'near' ? 'Hampir' : 'Perlu pecut');
+        return `
+            <article class="officer-rank-card ${status}">
+                <div class="officer-rank-card-header">
+                    <span class="officer-rank">${index + 1}</span>
+                    <h3 class="officer-name">${escapeHtml(item.displayName)}</h3>
+                    <span class="officer-badge">${label}</span>
+                </div>
+                <div class="officer-score-row">
+                    <strong class="officer-score">${item.latestCount.toLocaleString('ms-MY')}</strong>
+                    <div class="officer-progress"><span style="width:${Math.min(percent, 100).toFixed(1)}%"></span></div>
+                    <span class="officer-target">/${config.target}</span>
+                </div>
+                <div class="officer-card-meta">
+                    <span>Jumlah ${metrics.periodLabel}: ${item.total.toLocaleString('ms-MY')}</span>
+                    <span>Purata: ${item.average.toFixed(1)}</span>
+                    <span>Capai: ${item.hitDays}/${metrics.dates.length}</span>
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+function renderOfficerManagement(role, metrics, config) {
+    renderOfficerDailyChart(role, metrics, config);
+    renderOfficerHeatmap(role, metrics, config);
+    renderOfficerTable(role, metrics);
+}
+
+function renderOfficerDailyChart(role, metrics, config) {
+    renderMultiSeriesLineChart(`${role}DailyChart`, metrics.dates.map(formatDateFromIso), [{
+        label: config.label,
+        color: config.color,
+        data: metrics.dates.map(dateKey => metrics.dailyTotals.get(dateKey) || 0)
+    }, {
+        label: `Target ${config.target}`,
+        color: '#d72657',
+        data: metrics.dates.map(() => config.target * Math.max(metrics.officerItems.length, 1))
+    }], {
+        labelEvery: getGroupedLabelStep(metrics.dates.length),
+        valueLabels: 'peak'
+    });
+}
+
+function renderOfficerHeatmap(role, metrics, config) {
+    const note = document.getElementById(`${role}HeatmapNote`);
+    const element = document.getElementById(`${role}Heatmap`);
+    note.textContent = metrics.dates.length
+        ? `${metrics.monthLabel}. Hijau capai target, kuning 80% ke atas, merah bawah target.`
+        : 'Tiada data untuk filter ini.';
+    if (!metrics.officerItems.length || !metrics.dates.length) {
+        element.innerHTML = '<div class="empty-state">Tiada data untuk heatmap.</div>';
+        return;
+    }
+
+    const columns = metrics.dates.length + 1;
+    element.innerHTML = `
+        <div class="officer-heatmap-grid" style="grid-template-columns: 156px repeat(${metrics.dates.length}, 42px)">
+            <div class="officer-heatmap-cell name header">Pegawai</div>
+            ${metrics.dates.map(dateKey => `<div class="officer-heatmap-cell header">${Number(dateKey.slice(-2))}</div>`).join('')}
+            ${metrics.officerItems.map(item => `
+                <div class="officer-heatmap-cell name">${escapeHtml(item.displayName)}</div>
+                ${metrics.dates.map(dateKey => {
+                    const count = metrics.officerDayCounts.get(`${item.officerName}\u001f${dateKey}`) || 0;
+                    const className = count >= config.target ? 'hit' : (count >= config.target * 0.8 ? 'near' : (count ? 'miss' : 'empty'));
+                    return `<div class="officer-heatmap-cell ${className}" title="${escapeHtml(item.displayName)} - ${formatDateFromIso(dateKey)}">${count || '-'}</div>`;
+                }).join('')}
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderOfficerTable(role, metrics) {
+    const monthlyItems = buildOfficerAnnualTableRows(role)
+        .sort((a, b) => b.total - a.total || a.displayName.localeCompare(b.displayName, 'ms-MY'));
+    document.getElementById(`${role}VisibleRows`).textContent = `${monthlyItems.length.toLocaleString('ms-MY')} pegawai, semua bulan`;
+    document.getElementById(`${role}OfficerTableBody`).innerHTML = monthlyItems.length
+        ? monthlyItems.map(item => `
+            <tr>
+                <td>${escapeHtml(item.displayName)}</td>
+                ${item.monthTotals.map(total => `<td>${total ? total.toLocaleString('ms-MY') : '-'}</td>`).join('')}
+                <td><strong>${item.total.toLocaleString('ms-MY')}</strong></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="14" class="empty-state">Tiada data untuk jadual tahunan.</td></tr>';
+}
+
+function buildOfficerAnnualTableRows(role) {
+    const officers = new Map();
+    officerRows
+        .filter(row => row.role === role)
+        .forEach(row => {
+            const officerKey = normalizeKey(row.officerName);
+            if (!officers.has(officerKey)) {
+                officers.set(officerKey, {
+                    officerName: row.officerName,
+                    displayName: row.displayName,
+                    monthTotals: Array(12).fill(0),
+                    total: 0
+                });
+            }
+            const officer = officers.get(officerKey);
+            const monthIndex = row.workDate.getMonth();
+            officer.monthTotals[monthIndex] += row.completedCount;
+            officer.total += row.completedCount;
+        });
+    return [...officers.values()];
+}
+
+function formatOfficerSelectedMonth(role) {
+    const monthKey = officerFilterState[role].month;
+    if (!monthKey) return '-';
+    const [year, month] = monthKey.split('-').map(Number);
+    return `${monthLabels[month - 1]} ${year}`;
+}
+
+function updatePendingValidationDashboard() {
+    currentPendingValidationRows = pendingValidationRows.filter(row => selectedPendingValidationBranches.includes(row.branch));
+    const mappedRows = currentPendingValidationRows.filter(row => !row.isUnmapped);
+    const unmappedRows = currentPendingValidationRows.filter(row => row.isUnmapped);
+
+    const pendingTotal = currentPendingValidationRows.reduce((sum, row) => sum + row.applicationCount, 0);
+    document.getElementById('pendingValidationTotal').textContent = pendingTotal.toLocaleString('ms-MY');
+    updatePendingValidationTopScheme(mappedRows);
+    document.getElementById('pendingValidationUnmapped').textContent = unmappedRows.length.toLocaleString('ms-MY');
+
+    renderPendingValidationTable(currentPendingValidationRows);
+    renderPendingValidationUnmapped(unmappedRows);
+}
+
+function updatePendingValidationTopScheme(mappedRows) {
+    const grouped = new Map();
+    mappedRows.forEach(row => {
+        const scheme = row.templateScheme || row.mappedDetail || row.systemScheme || 'TANPA SKIM';
+        grouped.set(scheme, (grouped.get(scheme) || 0) + row.applicationCount);
+    });
+    const topScheme = [...grouped.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ms-MY'))[0];
+    const totalElement = document.getElementById('pendingValidationTopSchemeTotal');
+    const nameElement = document.getElementById('pendingValidationTopSchemeName');
+    if (!topScheme) {
+        totalElement.textContent = '0';
+        nameElement.textContent = '(Tiada data)';
+        return;
+    }
+    totalElement.textContent = topScheme[1].toLocaleString('ms-MY');
+    nameElement.textContent = `(${topScheme[0]})`;
+}
+
+function normalizeVisitorAggregateRows(data) {
+    return data.map(item => ({
+        year: Number(item.year),
+        month: Number(item.month),
+        paza: item.paza || '(Tiada PAZA)',
+        visitorCount: Number(item.visitor_count || 0)
+    })).filter(row => Number.isFinite(row.year) && row.month >= 1 && row.month <= 12);
+}
+
+function normalizeVisitorStaffRows(data) {
+    return data.map(item => ({
+        year: Number(item.year),
+        month: Number(item.month),
+        emailHash: item.email_hash || '',
+        staffName: item.staff_name || 'Staf tidak dikenal pasti',
+        staffPaza: item.staff_paza || '',
+        visitorCount: Number(item.visitor_count || 0),
+        pazaBreakdown: normalizeVisitorPazaBreakdown(item.paza_breakdown)
+    })).filter(row => row.emailHash && Number.isFinite(row.year) && row.month >= 1 && row.month <= 12);
+}
+
+function normalizeVisitorDailyRows(data) {
+    return data.map(item => ({
+        visitDate: String(item.visit_date || ''),
+        paza: item.paza || '(Tiada PAZA)',
+        visitorCount: Number(item.visitor_count || 0)
+    })).filter(row => isIsoDateString(row.visitDate) && row.visitorCount > 0);
+}
+
+function normalizeVisitorPazaBreakdown(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value)
+        .map(([paza, count]) => [paza || '(Tiada PAZA)', Number(count || 0)])
+        .filter(([, count]) => count > 0));
+}
+
+function updateVisitorDashboard() {
+    const activeRows = getFilteredVisitorRows();
+    const activeStaffRows = getFilteredVisitorStaffRows();
+    const total = activeRows.reduce((sum, row) => sum + row.visitorCount, 0);
+    const byPaza = groupVisitorByPaza(activeRows);
+    const byMonth = groupVisitorByMonth(activeRows);
+    const monthStats = getVisitorMonthStats(byMonth);
+
+    document.getElementById('visitorTotal').textContent = total.toLocaleString('ms-MY');
+    document.getElementById('visitorMonthlyAverage').textContent = monthStats.average.toLocaleString('ms-MY', { maximumFractionDigits: 0 });
+    document.getElementById('visitorMonthlyAverageNote').textContent = monthStats.activeMonthCount ? `(${monthStats.activeMonthCount} bulan data)` : '(Tiada data)';
+    document.getElementById('visitorHighestMonthTotal').textContent = monthStats.highest ? monthStats.highest.total.toLocaleString('ms-MY') : '0';
+    document.getElementById('visitorHighestMonthName').textContent = monthStats.highest ? `(${monthLabels[monthStats.highest.month - 1]})` : '(Tiada data)';
+    document.getElementById('visitorLowestMonthTotal').textContent = monthStats.lowest ? monthStats.lowest.total.toLocaleString('ms-MY') : '0';
+    document.getElementById('visitorLowestMonthName').textContent = monthStats.lowest ? `(${monthLabels[monthStats.lowest.month - 1]})` : '(Tiada data)';
+    document.getElementById('visitorDateRange').textContent = getVisitorDataRangeLabel();
+
+    renderVisitorPazaChart(byPaza);
+    renderVisitorDailyPazaTable();
+    renderVisitorStaffTable(activeStaffRows);
+    renderVisitorMonthlyTable(activeRows);
+}
+
+function setupVisitorDailyDateFilters() {
+    const fromInput = document.getElementById('visitorDailyFromDate');
+    const toInput = document.getElementById('visitorDailyToDate');
+    const range = getVisitorDailyAvailableRange();
+    if (!range.first || !range.last) {
+        fromInput.value = '';
+        toInput.value = '';
+        fromInput.removeAttribute('min');
+        fromInput.removeAttribute('max');
+        toInput.removeAttribute('min');
+        toInput.removeAttribute('max');
+        return;
+    }
+
+    fromInput.min = range.first;
+    fromInput.max = range.last;
+    toInput.min = range.first;
+    toInput.max = range.last;
+
+    if (!isIsoDateString(visitorDailyDateRange.from)
+        || visitorDailyDateRange.from < range.first
+        || visitorDailyDateRange.from > range.last) {
+        visitorDailyDateRange.from = range.first;
+    }
+    if (!isIsoDateString(visitorDailyDateRange.to)
+        || visitorDailyDateRange.to < range.first
+        || visitorDailyDateRange.to > range.last) {
+        visitorDailyDateRange.to = range.last;
+    }
+    fromInput.value = visitorDailyDateRange.from;
+    toInput.value = visitorDailyDateRange.to;
+}
+
+function resetVisitorDailyDateRange() {
+    const range = getVisitorDailyAvailableRange();
+    visitorDailyDateRange = { from: range.first || '', to: range.last || '' };
+    document.getElementById('visitorDailyFromDate').value = visitorDailyDateRange.from;
+    document.getElementById('visitorDailyToDate').value = visitorDailyDateRange.to;
+    renderVisitorDailyPazaTable();
+}
+
+function getFilteredVisitorRows() {
+    if (selectedVisitorMonth === 'all') return visitorRows;
+    const month = Number(selectedVisitorMonth);
+    return visitorRows.filter(row => row.month === month);
+}
+
+function getFilteredVisitorStaffRows() {
+    if (selectedVisitorMonth === 'all') return visitorStaffRows;
+    const month = Number(selectedVisitorMonth);
+    return visitorStaffRows.filter(row => row.month === month);
+}
+
+function getVisitorDataRangeLabel() {
+    if (!latestVisitorRun) return 'Data pengunjung: Belum tersedia.';
+    const syncedAt = latestVisitorRun.finished_at || latestVisitorRun.started_at;
+    const uniqueText = Number(latestVisitorRun.unique_rows || 0).toLocaleString('ms-MY');
+    const duplicateText = Number(latestVisitorRun.duplicate_rows || 0).toLocaleString('ms-MY');
+    const monthText = selectedVisitorMonth === 'all' ? '' : ` Filter: ${monthLabels[Number(selectedVisitorMonth) - 1]}.`;
+    return `Data pengunjung ${latestVisitorRun.source_year}: ${uniqueText} lawatan dikira. Duplicate 20 minit: ${duplicateText}. Sync pada ${formatDateTime(syncedAt)}.${monthText}`;
+}
+
+function getVisitorMonthStats(byMonth) {
+    const months = [...byMonth.entries()]
+        .filter(([, total]) => total > 0)
+        .map(([month, total]) => ({ month: Number(month), total }));
+    if (!months.length) {
+        return { activeMonthCount: 0, average: 0, highest: null, lowest: null };
+    }
+
+    const sum = months.reduce((total, item) => total + item.total, 0);
+    const highest = [...months].sort((a, b) => b.total - a.total || a.month - b.month)[0];
+    const lowest = [...months].sort((a, b) => a.total - b.total || a.month - b.month)[0];
+    return {
+        activeMonthCount: months.length,
+        average: sum / months.length,
+        highest,
+        lowest
+    };
+}
+
+function groupVisitorByPaza(sourceRows) {
+    return sourceRows.reduce((grouped, row) => {
+        grouped.set(row.paza, (grouped.get(row.paza) || 0) + row.visitorCount);
+        return grouped;
+    }, new Map());
+}
+
+function groupVisitorByMonth(sourceRows) {
+    return sourceRows.reduce((grouped, row) => {
+        grouped.set(row.month, (grouped.get(row.month) || 0) + row.visitorCount);
+        return grouped;
+    }, new Map());
+}
+
+function renderVisitorPazaChart(byPaza) {
+    const items = [...byPaza.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ms-MY'))
+        .slice(0, 10)
+        .map(([label, value]) => ({ label, value }));
+    renderHorizontalBarChart('visitorPazaChart', items);
+}
+
+function getVisitorDailyAvailableRange() {
+    const dates = visitorDailyRows.map(row => row.visitDate).filter(isIsoDateString).sort();
+    return { first: dates[0] || '', last: dates[dates.length - 1] || '' };
+}
+
+function getFilteredVisitorDailyRows() {
+    const from = visitorDailyDateRange.from;
+    const to = visitorDailyDateRange.to;
+    if (!from || !to || from > to) return [];
+    return visitorDailyRows.filter(row => row.visitDate >= from && row.visitDate <= to);
+}
+
+function renderVisitorDailyPazaTable() {
+    const body = document.getElementById('visitorDailyPazaTableBody');
+    const foot = document.getElementById('visitorDailyPazaTableFoot');
+    const summary = document.getElementById('visitorDailyPazaSummary');
+    const range = getVisitorDailyAvailableRange();
+
+    if (!visitorDailyRows.length || !range.first || !range.last) {
+        summary.textContent = 'Data harian belum tersedia.';
+        body.innerHTML = '<tr><td colspan="3" class="empty-state">Tiada data harian rekod pengunjung.</td></tr>';
+        foot.innerHTML = '';
+        return;
+    }
+
+    const from = visitorDailyDateRange.from || range.first;
+    const to = visitorDailyDateRange.to || range.last;
+    if (from > to) {
+        summary.textContent = 'Tarikh mula melebihi tarikh akhir.';
+        body.innerHTML = '<tr><td colspan="3" class="empty-state">Sila pilih julat tarikh yang sah.</td></tr>';
+        foot.innerHTML = '';
+        return;
+    }
+
+    const rows = getFilteredVisitorDailyRows();
+    const grouped = groupVisitorByPaza(rows);
+    const items = [...grouped.entries()]
+        .map(([paza, total]) => ({ paza, total }))
+        .sort((a, b) => b.total - a.total || a.paza.localeCompare(b.paza, 'ms-MY'));
+    const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
+
+    summary.textContent = `${formatDateFromIso(from)} hingga ${formatDateFromIso(to)}. ${items.length.toLocaleString('ms-MY')} PAZA dipapar.`;
+    body.innerHTML = items.length
+        ? items.map((item, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHtml(item.paza)}</td>
+                <td><strong>${item.total.toLocaleString('ms-MY')}</strong></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="3" class="empty-state">Tiada data rekod pengunjung untuk julat tarikh ini.</td></tr>';
+    foot.innerHTML = `
+        <tr>
+            <td colspan="2">Jumlah</td>
+            <td>${grandTotal.toLocaleString('ms-MY')}</td>
+        </tr>
+    `;
+}
+
+function renderVisitorStaffTable(sourceRows) {
+    const grouped = new Map();
+    sourceRows.forEach(row => {
+        if (!grouped.has(row.emailHash)) {
+            grouped.set(row.emailHash, {
+                staffName: row.staffName,
+                staffPaza: row.staffPaza,
+                visitorCount: 0,
+                pazaBreakdown: {}
+            });
+        }
+        const item = grouped.get(row.emailHash);
+        item.visitorCount += row.visitorCount;
+        Object.entries(row.pazaBreakdown).forEach(([paza, count]) => {
+            item.pazaBreakdown[paza] = (item.pazaBreakdown[paza] || 0) + count;
+        });
+    });
+
+    const items = [...grouped.values()]
+        .sort((a, b) => b.visitorCount - a.visitorCount || a.staffName.localeCompare(b.staffName, 'ms-MY'))
+        .slice(0, 5);
+
+    document.getElementById('visitorStaffVisibleRows').textContent = `${items.length.toLocaleString('ms-MY')} staf dipapar`;
+    document.getElementById('visitorStaffTableBody').innerHTML = items.length
+        ? items.map(item => `
+            <tr>
+                <td class="staff-name-cell">${escapeHtml(item.staffName)}${item.staffPaza ? `<br><small>${escapeHtml(item.staffPaza)}</small>` : ''}</td>
+                <td><strong>${item.visitorCount.toLocaleString('ms-MY')}</strong></td>
+                <td class="staff-breakdown">${escapeHtml(formatVisitorPazaBreakdown(item.pazaBreakdown))}</td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="3" class="empty-state">Data ranking staf belum tersedia.</td></tr>';
+}
+
+function formatVisitorPazaBreakdown(breakdown) {
+    const items = Object.entries(breakdown || {})
+        .filter(([, count]) => Number(count) > 0)
+        .sort((a, b) => Number(b[1]) - Number(a[1]) || a[0].localeCompare(b[0], 'ms-MY'));
+    return items.length
+        ? items.map(([paza, count]) => `${paza} ${Number(count).toLocaleString('ms-MY')}`).join(', ')
+        : '-';
+}
+
+function renderVisitorMonthlyTable(sourceRows) {
+    const grouped = new Map();
+    sourceRows.forEach(row => {
+        if (!grouped.has(row.paza)) grouped.set(row.paza, Array(12).fill(0));
+        grouped.get(row.paza)[row.month - 1] += row.visitorCount;
+    });
+
+    const items = [...grouped.entries()]
+        .map(([paza, values]) => ({
+            paza,
+            values,
+            total: values.reduce((sum, value) => sum + value, 0)
+        }))
+        .sort((a, b) => b.total - a.total || a.paza.localeCompare(b.paza, 'ms-MY'));
+
+    document.getElementById('visitorVisibleRows').textContent = `${items.length.toLocaleString('ms-MY')} PAZA dipapar`;
+    const totals = Array(12).fill(0);
+    items.forEach(item => item.values.forEach((value, index) => {
+        totals[index] += value;
+    }));
+    const grandTotal = totals.reduce((sum, value) => sum + value, 0);
+
+    if (selectedVisitorMonth !== 'all') {
+        const monthIndex = Number(selectedVisitorMonth) - 1;
+        document.getElementById('visitorMonthlyTableHead').innerHTML = `
+            <tr>
+                <th>PAZA</th>
+                <th>${monthLabels[monthIndex].toUpperCase()}</th>
+            </tr>
+        `;
+        document.getElementById('visitorMonthlyTableBody').innerHTML = items.length
+            ? items.map(item => `
+                <tr>
+                    <td>${escapeHtml(item.paza)}</td>
+                    <td><strong>${item.values[monthIndex].toLocaleString('ms-MY')}</strong></td>
+                </tr>
+            `).join('')
+            : '<tr><td colspan="2" class="empty-state">Tiada data rekod pengunjung.</td></tr>';
+        document.getElementById('visitorMonthlyTableFoot').innerHTML = `
+            <tr>
+                <td>Jumlah</td>
+                <td>${totals[monthIndex].toLocaleString('ms-MY')}</td>
+            </tr>
+        `;
+        return;
+    }
+
+    document.getElementById('visitorMonthlyTableHead').innerHTML = `
+        <tr>
+            <th>PAZA</th>
+            ${monthLabels.map(label => `<th>${label.toUpperCase()}</th>`).join('')}
+            <th>Jumlah</th>
+        </tr>
+    `;
+    document.getElementById('visitorMonthlyTableBody').innerHTML = items.length
+        ? items.map(item => `
+            <tr>
+                <td>${escapeHtml(item.paza)}</td>
+                ${item.values.map(value => `<td>${value.toLocaleString('ms-MY')}</td>`).join('')}
+                <td><strong>${item.total.toLocaleString('ms-MY')}</strong></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="14" class="empty-state">Tiada data rekod pengunjung.</td></tr>';
+    document.getElementById('visitorMonthlyTableFoot').innerHTML = `
+        <tr>
+            <td>Jumlah</td>
+            ${totals.map(value => `<td>${value.toLocaleString('ms-MY')}</td>`).join('')}
+            <td>${grandTotal.toLocaleString('ms-MY')}</td>
+        </tr>
+    `;
+}
+
+function updateAllDataRangeLabels() {
+    document.querySelectorAll('.tab-data-range').forEach(element => {
+        element.textContent = getDataRangeLabel(element.dataset.rangePrefix || 'Data permohonan');
+    });
+}
+
+function getDataRangeLabel(prefix) {
+    if (!dataRange.first || !dataRange.last) return `${prefix}: -`;
+    const updatedText = latestRun?.generated_at
+        ? `. Dikemaskini pada ${formatDateTime(latestRun.generated_at)}.`
+        : '.';
+    return `${prefix}: ${formatShortDate(dataRange.first)} hingga ${formatShortDate(dataRange.last)}${updatedText}`;
+}
+
+function renderPendingValidationTable(activeRows) {
+    const counts = new Map();
+    activeRows.filter(row => !row.isUnmapped).forEach(row => {
+        const key = row.mappedDetail;
+        const current = counts.get(key) || Array(12).fill(0);
+        if (row.applicationMonth >= 1 && row.applicationMonth <= 12) current[row.applicationMonth - 1] += row.applicationCount;
+        counts.set(key, current);
+    });
+
+    let visibleRowCount = 0;
+    const rowsHtml = pendingValidationTemplateRows.map(template => {
+        const monthCounts = counts.get(template.template_detail) || Array(12).fill(0);
+        const total = monthCounts.reduce((sum, value) => sum + value, 0);
+        if (!showAllPendingValidationRows && total === 0) return '';
+        const searchableText = normalizeKey([
+            template.template_category,
+            template.template_bil,
+            template.template_scheme,
+            template.template_detail
+        ].join(' '));
+        if (pendingValidationSearchTerm && !searchableText.includes(pendingValidationSearchTerm)) return '';
+        visibleRowCount++;
+        return `
+            <tr>
+                <td>${escapeHtml(template.template_category || '')}</td>
+                <td>${template.template_bil ?? ''}</td>
+                <td>${escapeHtml(template.template_scheme || '')}</td>
+                <td>${escapeHtml(template.template_detail || '')}</td>
+                ${monthCounts.map(value => `<td>${value ? value.toLocaleString('ms-MY') : '0'}</td>`).join('')}
+                <td><strong>${total.toLocaleString('ms-MY')}</strong></td>
+            </tr>
+        `;
+    }).join('');
+
+    const totals = Array(12).fill(0);
+    counts.forEach(monthCounts => monthCounts.forEach((value, index) => { totals[index] += value; }));
+    const grandTotal = totals.reduce((sum, value) => sum + value, 0);
+
+    document.getElementById('pendingValidationTableBody').innerHTML = rowsHtml || '<tr><td colspan="17" class="empty-state">Tiada data dipadan untuk filter ini. Aktifkan "Tunjuk semua row" untuk lihat template penuh.</td></tr>';
+    document.getElementById('pendingValidationVisibleRows').textContent = `${visibleRowCount.toLocaleString('ms-MY')} row dipapar`;
+    document.getElementById('pendingValidationTableFoot').innerHTML = `
+        <tr>
+            <td colspan="4">Jumlah Dipadan</td>
+            ${totals.map(value => `<td>${value.toLocaleString('ms-MY')}</td>`).join('')}
+            <td>${grandTotal.toLocaleString('ms-MY')}</td>
+        </tr>
+    `;
+}
+
+function renderPendingValidationUnmapped(unmappedRows) {
+    const grouped = new Map();
+    unmappedRows.forEach(row => {
+        const item = grouped.get(row.systemScheme) || { scheme: row.systemScheme, count: 0, sample: row };
+        item.count += row.applicationCount;
+        grouped.set(row.systemScheme, item);
+    });
+    const rowsHtml = [...grouped.values()]
+        .sort((a, b) => b.count - a.count || a.scheme.localeCompare(b.scheme))
+        .map(item => `
+            <tr>
+                <td>${escapeHtml(item.scheme)}</td>
+                <td>${item.count.toLocaleString('ms-MY')}</td>
+                <td>${formatShortDate(item.sample.appliedDate)}</td>
+            </tr>
+        `).join('');
+    document.getElementById('pendingValidationUnmappedBody').innerHTML = rowsHtml || '<tr><td colspan="3" class="empty-state">Tiada unmapped untuk filter ini.</td></tr>';
+}
+
+function scrollPendingValidationTable(delta) {
+    const wrap = document.getElementById('pendingValidationTableWrap');
+    if (!wrap) return;
+    wrap.scrollBy({ left: delta, behavior: 'smooth' });
+}
+
+function updateApplicationKpis(activeRows) {
+    const totals = getApplicationTypeTotals(activeRows);
+    const statusTotals = getApplicationStatusTotals(activeRows);
+    const total = Object.values(totals).reduce((sum, value) => sum + value, 0);
+
+    document.getElementById('applicationTotal').textContent = total.toLocaleString('ms-MY');
+    document.getElementById('applicationNewTotal').textContent = (totals.new || 0).toLocaleString('ms-MY');
+    document.getElementById('applicationRenewalTotal').textContent = (totals.renewal || 0).toLocaleString('ms-MY');
+    document.getElementById('applicationAppealTotal').textContent = (totals.appeal || 0).toLocaleString('ms-MY');
+    document.getElementById('applicationAddrateTotal').textContent = (totals.addrate || 0).toLocaleString('ms-MY');
+    updateStatusKpi('Processing', statusTotals.processing, statusTotals.total);
+    updateStatusKpi('Rejected', statusTotals.rejected, statusTotals.total);
+    updateStatusKpi('Pending', statusTotals.pending, statusTotals.total);
+    updateStatusKpi('Cancel', statusTotals.cancel, statusTotals.total);
+    updateStatusKpi('Terminated', statusTotals.terminated, statusTotals.total);
+}
+
+function getApplicationTypeTotals(activeRows) {
+    return activeRows.reduce((totals, row) => {
+        totals[row.applicationType] = (totals[row.applicationType] || 0) + row.totalApplications;
+        return totals;
+    }, {});
+}
+
+function getApplicationStatusTotals(activeRows) {
+    const totals = activeRows.reduce((totals, row) => {
+        applicationStatusKeys.forEach(key => {
+            totals[key] += Number(row.statusCounts?.[key] || 0);
+        });
+        return totals;
+    }, { processing: 0, rejected: 0, pending: 0, cancel: 0, terminated: 0 });
+    totals.total = applicationStatusKeys.reduce((sum, key) => sum + totals[key], 0);
+    return totals;
+}
+
+function updateStatusKpi(idSuffix, count, total) {
+    document.getElementById(`applicationStatus${idSuffix}Total`).textContent = count.toLocaleString('ms-MY');
+    document.getElementById(`applicationStatus${idSuffix}Percent`).textContent = total
+        ? `(${((count / total) * 100).toFixed(1)}%)`
+        : '(0.0%)';
+}
+
+function updateApplicationCharts(activeRows) {
+    const daily = buildDailyApplicationSeries(activeRows);
+    dailyLabels = daily.keys;
+    syncDailyZoomInputs(dailyLabels.length);
+
+    const start = Math.min(dailyZoom.start, Math.max(dailyLabels.length - 1, 0));
+    const end = Math.min(Math.max(dailyZoom.end, start), Math.max(dailyLabels.length - 1, 0));
+    dailyZoom = { start, end };
+    const slicedDaily = {
+        labels: daily.labels.slice(start, end + 1),
+        keys: daily.keys.slice(start, end + 1),
+        series: daily.series.map(item => ({ ...item, data: item.data.slice(start, end + 1) }))
+    };
+
+    document.getElementById('dailyZoomLabel').textContent = slicedDaily.keys.length
+        ? `${formatDateFromIso(slicedDaily.keys[0])} hingga ${formatDateFromIso(slicedDaily.keys[slicedDaily.keys.length - 1])}`
+        : 'Tiada data';
+
+    renderMultiSeriesLineChart('applicationDailyChart', slicedDaily.labels, slicedDaily.series, {
+        labelEvery: getDailyLabelStep(slicedDaily.labels.length),
+        large: true,
+        tooltipId: 'applicationDailyChartTooltip',
+        valueLabels: 'peak'
+    });
+
+    const weekly = buildGroupedApplicationSeries(activeRows, getWeekKey, formatWeekLabel);
+    renderMultiSeriesLineChart('applicationWeeklyChart', weekly.labels, weekly.series, {
+        labelEvery: getGroupedLabelStep(weekly.labels.length),
+        tooltipId: 'applicationWeeklyChartTooltip',
+        valueLabels: 'peak'
+    });
+
+    const monthly = buildGroupedApplicationSeries(activeRows, row => `${row.appliedDate.getFullYear()}-${String(row.appliedDate.getMonth() + 1).padStart(2, '0')}`, key => {
+        const month = Number(key.split('-')[1]);
+        return monthLabels[month - 1];
+    });
+    renderMultiSeriesLineChart('applicationMonthlyChart', monthly.labels, monthly.series, {
+        tooltipId: 'applicationMonthlyChartTooltip',
+        valueLabels: 'all'
+    });
+
+    applicationChartData = {
+        daily: {
+            labels: slicedDaily.labels,
+            series: slicedDaily.series,
+            labelEvery: getDailyLabelStep(slicedDaily.labels.length),
+            rangeLabel: slicedDaily.keys.length
+                ? `${formatDateFromIso(slicedDaily.keys[0])} hingga ${formatDateFromIso(slicedDaily.keys[slicedDaily.keys.length - 1])}`
+                : 'Tiada data'
+        },
+        weekly: {
+            labels: weekly.labels,
+            series: weekly.series,
+            labelEvery: getGroupedLabelStep(weekly.labels.length),
+            rangeLabel: getApplicationChartRangeLabel(activeRows)
+        },
+        monthly: {
+            labels: monthly.labels,
+            series: monthly.series,
+            labelEvery: 1,
+            rangeLabel: getApplicationChartRangeLabel(activeRows)
+        }
+    };
+
+    if (activeApplicationChartDetail) renderApplicationChartDetail();
+}
+
+function getApplicationChartRangeLabel(activeRows) {
+    const range = getApplicationAggregateRange(activeRows);
+    if (!range.first || !range.last) return 'Tiada data';
+    return `${formatShortDate(range.first)} hingga ${formatShortDate(range.last)}`;
+}
+
+function openApplicationChartDetail(chartKey) {
+    if (!applicationChartDetailMeta[chartKey] || !applicationChartData[chartKey]) return;
+    activeApplicationChartDetail = chartKey;
+    switchTab('applicationChartDetailPanel');
+}
+
+function closeApplicationChartDetail() {
+    activeApplicationChartDetail = null;
+    hideApplicationChartTooltip();
+    switchTab('applicationPanel');
+}
+
+function renderApplicationChartDetail() {
+    const chartKey = activeApplicationChartDetail;
+    const chartData = applicationChartData[chartKey];
+    const chartMeta = applicationChartDetailMeta[chartKey];
+    if (!chartData || !chartMeta) return;
+
+    const modeLabel = getSchemeViewLabels().label;
+    setElementText('applicationChartDetailTitle', `${chartMeta.title} - ${modeLabel}`);
+    setElementText(
+        'applicationChartDetailContext',
+        `${chartData.rangeLabel} | ${selectedApplicationSchemes.length.toLocaleString('ms-MY')} skim | ${selectedApplicationBranches.length.toLocaleString('ms-MY')} cawangan`
+    );
+
+    const canvas = document.getElementById('applicationChartDetailCanvas');
+    canvas.setAttribute('aria-label', `${chartMeta.title}, ${modeLabel}`);
+    renderMultiSeriesLineChart('applicationChartDetailCanvas', chartData.labels, chartData.series, {
+        height: window.innerWidth < 820 ? 430 : 580,
+        labelEvery: chartData.labelEvery,
+        tooltipId: 'applicationChartDetailTooltip',
+        valueLabels: 'none'
+    });
+}
+
+function hideApplicationChartTooltip() {
+    const tooltip = document.getElementById('applicationChartDetailTooltip');
+    if (tooltip) tooltip.hidden = true;
+}
+
+function updateApplicationLeaderboards(activeRows) {
+    renderLeaderboard('applicationTopSchemes', getTopAggregateCounts(activeRows, getSchemeViewValue, 5));
+    renderLeaderboard('applicationTopDays', getTopAggregateCounts(activeRows, row => row.dateKey, 5).map(item => ({ ...item, label: formatDateFromIso(item.label) })));
+    renderLeaderboard('applicationTopWeeks', getTopAggregateCounts(activeRows, getWeekKey, 5).map(item => ({ ...item, label: formatWeekLabel(item.label) })));
+}
+
+function buildDailyApplicationSeries(activeRows) {
+    const range = getApplicationAggregateRange(activeRows);
+    if (!range.first || !range.last) {
+        return { keys: [], labels: [], series: getApplicationSeriesMeta(activeRows).map(item => ({ ...item, data: [] })) };
+    }
+
+    const keys = [];
+    const current = toDateOnly(range.first);
+    const end = toDateOnly(range.last);
+    while (current <= end) {
+        keys.push(toIsoDate(current));
+        current.setDate(current.getDate() + 1);
+    }
+
+    const grouped = groupApplicationAggregates(activeRows, row => row.dateKey);
+    return {
+        keys,
+        labels: keys.map(key => {
+            const [, month, day] = key.split('-');
+            return `${Number(day)}/${Number(month)}`;
+        }),
+        series: getApplicationSeriesMeta(activeRows).map(item => ({
+            ...item,
+            data: keys.map(key => grouped.get(key)?.get(item.type) || 0)
+        }))
+    };
+}
+
+function buildGroupedApplicationSeries(activeRows, keyGetter, labelFormatter) {
+    const keys = [...new Set(activeRows.map(keyGetter))].sort();
+    const grouped = groupApplicationAggregates(activeRows, keyGetter);
+    return {
+        labels: keys.map(labelFormatter),
+        series: getApplicationSeriesMeta(activeRows).map(item => ({
+            ...item,
+            data: keys.map(key => grouped.get(key)?.get(item.type) || 0)
+        }))
+    };
+}
+
+function groupApplicationAggregates(activeRows, keyGetter) {
+    const grouped = new Map();
+    activeRows.forEach(row => {
+        const key = keyGetter(row);
+        if (!grouped.has(key)) grouped.set(key, new Map());
+        const typeMap = grouped.get(key);
+        typeMap.set(row.applicationType, (typeMap.get(row.applicationType) || 0) + row.totalApplications);
+    });
+    return grouped;
+}
+
+function getApplicationSeriesMeta(activeRows) {
+    const types = applicationTypeOrder.filter(type => activeRows.some(row => row.applicationType === type));
+    const extras = getUniqueValues(activeRows.map(row => row.applicationType)).filter(type => !types.includes(type));
+    return [...types, ...extras].map(type => ({
+        type,
+        label: typeLabels[type] || titleCase(type),
+        color: applicationTypeColors[type] || applicationTypeColors.other
+    }));
+}
+
+function getApplicationAggregateRange(activeRows) {
+    const dates = activeRows.map(row => row.appliedDate).sort((a, b) => a - b);
+    return { first: dates[0] || null, last: dates[dates.length - 1] || null };
+}
+
+function getTopAggregateCounts(activeRows, getter, limit) {
+    const counts = new Map();
+    activeRows.forEach(row => {
+        const label = getter(row);
+        counts.set(label, (counts.get(label) || 0) + row.totalApplications);
+    });
+    return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+        .slice(0, limit)
+        .map(([label, count]) => ({ label, count }));
+}
+
+function renderLeaderboard(id, items) {
+    const element = document.getElementById(id);
+    if (!items.length) {
+        element.innerHTML = '<li><span>Tiada data</span><strong>0</strong></li>';
+        return;
+    }
+    element.innerHTML = items.map(item => `
+        <li>
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${item.count.toLocaleString('ms-MY')}</strong>
+        </li>
+    `).join('');
+}
+
+function syncDailyZoomInputs(length) {
+    const startInput = document.getElementById('dailyStartRange');
+    const endInput = document.getElementById('dailyEndRange');
+    const max = Math.max(length - 1, 0);
+    if (!dailyZoomInitialized) {
+        dailyZoom = { start: 0, end: max };
+        dailyZoomInitialized = true;
+    } else {
+        dailyZoom = {
+            start: Math.min(dailyZoom.start, max),
+            end: Math.min(Math.max(dailyZoom.end, dailyZoom.start), max)
+        };
+    }
+    [startInput, endInput].forEach(input => {
+        input.max = String(max);
+        input.disabled = length <= 1;
+    });
+    startInput.value = String(dailyZoom.start);
+    endInput.value = String(dailyZoom.end);
+    updateDailyRangeControl();
+}
+
+function updateDailyZoomFromInputs() {
+    const startInput = document.getElementById('dailyStartRange');
+    const endInput = document.getElementById('dailyEndRange');
+    let start = Number(startInput.value);
+    let end = Number(endInput.value);
+    if (start > end) {
+        if (document.activeElement === startInput) end = start;
+        else start = end;
+    }
+    dailyZoom = { start, end };
+    startInput.value = String(start);
+    endInput.value = String(end);
+    dailyZoomInitialized = true;
+    updateDailyRangeControl();
+    updateApplicationDashboard();
+}
+
+function resetDailyZoom() {
+    dailyZoom = { start: 0, end: Math.max(dailyLabels.length - 1, 0) };
+    dailyZoomInitialized = true;
+    updateApplicationDashboard();
+}
+
+function updateDailyRangeControl() {
+    const startInput = document.getElementById('dailyStartRange');
+    const endInput = document.getElementById('dailyEndRange');
+    const selection = document.getElementById('dailyRangeSelection');
+    const max = Math.max(Number(startInput.max || 0), 0);
+    const start = Math.max(0, Math.min(Number(startInput.value || 0), max));
+    const end = Math.max(start, Math.min(Number(endInput.value || 0), max));
+    const startPercent = max ? (start / max) * 100 : 0;
+    const endPercent = max ? (end / max) * 100 : 100;
+
+    selection.style.left = `${startPercent}%`;
+    selection.style.right = `${Math.max(0, 100 - endPercent)}%`;
+    startInput.style.zIndex = start >= max - 1 ? '5' : '3';
+    endInput.style.zIndex = '4';
+    setElementText('dailyStartDateLabel', dailyLabels[start] ? formatDateFromIso(dailyLabels[start]) : '-');
+    setElementText('dailyEndDateLabel', dailyLabels[end] ? formatDateFromIso(dailyLabels[end]) : '-');
+}
+
+function getDailyLabelStep(count) {
+    const mobile = window.innerWidth < 820;
+    if (count <= (mobile ? 8 : 14)) return 1;
+    if (count <= (mobile ? 30 : 45)) return mobile ? 5 : 3;
+    if (count <= (mobile ? 75 : 90)) return mobile ? 10 : 7;
+    return mobile ? 21 : 14;
+}
+
+function getGroupedLabelStep(count) {
+    const mobile = window.innerWidth < 820;
+    const target = mobile ? 5 : 8;
+    return Math.max(1, Math.ceil(count / target));
+}
+
 function updateKpis(activeRows, approvedRows) {
     const total = activeRows.length;
     const approved = approvedRows.length;
     const pending = total - approved;
-    const onTime = approvedRows.filter(row => row.aging <= 5).length;
+    const onTime = approvedRows.filter(isWithinAgingThreshold).length;
     const late = approved - onTime;
 
     document.getElementById('totalApplications').textContent = total.toLocaleString('ms-MY');
@@ -256,32 +2679,33 @@ function updateKpis(activeRows, approvedRows) {
     document.getElementById('onTimePercent').textContent = approved ? `${((onTime / approved) * 100).toFixed(1)}%` : '0%';
 }
 
-function updateTrendChart(approvedRows) {
+function updateTrendChart(approvedRows, canvasId = 'trendChart', mode = metricMode) {
     const denominator = Array(12).fill(0);
     const numerator = Array(12).fill(0);
 
     approvedRows.forEach(row => {
         const month = row.appliedDate.getMonth();
         denominator[month]++;
-        if (row.aging <= 5) numerator[month]++;
+        if (isWithinAgingThreshold(row)) numerator[month]++;
     });
 
-    const data = metricMode === 'percent'
+    const data = mode === 'percent'
         ? numerator.map((value, index) => denominator[index] ? (value / denominator[index]) * 100 : 0)
         : numerator;
 
-    renderLineChart('trendChart', monthLabels, data, metricMode === 'percent');
+    renderLineChart(canvasId, monthLabels, data, mode === 'percent');
 }
 
-function updateRankingTable(approvedRows) {
+function updateRankingTable(approvedRows, bodyId = 'rankingTableBody') {
     const grouped = new Map();
     approvedRows.forEach(row => {
-        if (!grouped.has(row.scheme)) {
-            grouped.set(row.scheme, { scheme: row.scheme, approved: 0, onTime: 0 });
+        const scheme = getSchemeViewValue(row);
+        if (!grouped.has(scheme)) {
+            grouped.set(scheme, { scheme, approved: 0, onTime: 0 });
         }
-        const item = grouped.get(row.scheme);
+        const item = grouped.get(scheme);
         item.approved++;
-        if (row.aging <= 5) item.onTime++;
+        if (isWithinAgingThreshold(row)) item.onTime++;
     });
 
     const rankingRows = [...grouped.values()]
@@ -292,7 +2716,7 @@ function updateRankingTable(approvedRows) {
         }))
         .sort((a, b) => b.percent - a.percent || b.approved - a.approved || a.scheme.localeCompare(b.scheme));
 
-    const tbody = document.getElementById('rankingTableBody');
+    const tbody = document.getElementById(bodyId);
     if (!rankingRows.length) {
         tbody.innerHTML = '<tr><td class="empty-state" colspan="4">Tiada kelulusan untuk filter ini.</td></tr>';
         return;
@@ -301,7 +2725,7 @@ function updateRankingTable(approvedRows) {
     tbody.innerHTML = rankingRows.map((row, index) => `
         <tr>
             <td>${index + 1}</td>
-            <td>${escapeHtml(toProperCaps(row.scheme))}</td>
+            <td>${escapeHtml(schemeViewMode === 'detailed' ? toProperCaps(row.scheme) : row.scheme)}</td>
             <td><span class="${getPerformanceBadgeClass(row.percent)}">${formatPercent(row.percent)}</span></td>
             <td>${row.approved.toLocaleString('ms-MY')}</td>
         </tr>
@@ -311,17 +2735,17 @@ function updateRankingTable(approvedRows) {
 function updateSummaryTable() {
     if (!rows.length) return;
 
-    const type = document.getElementById('tableTypeFilter').value;
-    const approvedRows = rows.filter(row => {
-        const schemeMatch = selectedTableSchemes.includes(row.scheme);
-        const typeMatch = type === 'all' || row.applicationTypeLabel === type;
-        return row.isApproved && schemeMatch && typeMatch;
+    const approvedRows = getSchemeViewRows(rows).filter(row => {
+        const branchMatch = selectedTableBranches.includes(row.branch);
+        const schemeMatch = selectedTableSchemes.includes(getSchemeViewValue(row));
+        const typeMatch = selectedTableTypes.includes(row.applicationTypeLabel);
+        return row.isApproved && branchMatch && schemeMatch && typeMatch;
     });
 
     const grouped = monthLabels.map((month, index) => ({ month, monthIndex: index, underFive: 0, overFive: 0 }));
     approvedRows.forEach(row => {
         const item = grouped[row.appliedDate.getMonth()];
-        if (row.aging <= 5) item.underFive++;
+        if (isWithinAgingThreshold(row)) item.underFive++;
         else item.overFive++;
     });
 
@@ -359,7 +2783,8 @@ function downloadSummaryTable() {
         return;
     }
 
-    const headers = ['Bulan', 'Jumlah', '5 Hari Ke Bawah', '6 Hari Ke Atas', '% 5 Hari', '% 6 Hari'];
+    const labels = getAgingThresholdLabels();
+    const headers = ['Bulan', 'Jumlah', labels.onTime, labels.late, labels.ranking, labels.latePercent];
     const body = currentSummaryRows.map(row => {
         const total = row.underFive + row.overFive;
         return [
@@ -376,9 +2801,711 @@ function downloadSummaryTable() {
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `jadual-prestasi-keseluruhan-${toIsoDate(new Date())}.csv`;
+    link.download = `jadual-prestasi-keseluruhan-${getSchemeViewLabels().slug}-${agingThreshold}-hari-${toIsoDate(new Date())}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
+}
+
+async function copyOfficerSummary(role) {
+    const config = officerRoleConfigs[role];
+    const metrics = getOfficerDashboardMetrics(role, config).currentMetrics;
+    const latestDate = metrics.latestDate ? formatDateFromIso(metrics.latestDate) : '-';
+    const hitNames = metrics.officerItems
+        .filter(item => item.latestCount >= config.target)
+        .map(item => `${item.displayName} (${item.latestCount})`);
+    const needPushNames = metrics.officerItems
+        .filter(item => item.latestCount < config.target)
+        .slice(0, 8)
+        .map(item => `${item.displayName} (${item.latestCount}/${config.target})`);
+    const text = [
+        `Ringkasan Prestasi Harian ${config.label}`,
+        `Tempoh: ${metrics.periodLabel}`,
+        `Tarikh paparan: ${latestDate}`,
+        `Jumlah selesai: ${metrics.totalCompleted.toLocaleString('ms-MY')}`,
+        `Capai target: ${metrics.latestHitCount}/${metrics.officerItems.length} pegawai`,
+        `Capai target: ${hitNames.length ? hitNames.join(', ') : 'Tiada'}`,
+        `Perlu pecut: ${needPushNames.length ? needPushNames.join(', ') : 'Tiada'}`
+    ].join('\n');
+
+    try {
+        await navigator.clipboard.writeText(text);
+        showAuthMessage(`Ringkasan ${config.label.toLowerCase()} telah disalin.`, false);
+    } catch (_error) {
+        showAuthMessage(text, false);
+    }
+}
+
+function downloadOfficerCsv(role) {
+    const config = officerRoleConfigs[role];
+    const metrics = getOfficerDashboardMetrics(role, config).currentMetrics;
+    if (!metrics.officerItems.length) {
+        showAuthMessage(`Tiada data ${config.label.toLowerCase()} untuk download.`, true);
+        return;
+    }
+
+    const headers = ['Peranan', 'Tempoh', 'Pegawai Ringkas', 'Nama Penuh', 'Jumlah', 'Purata Hari Bekerja', 'Hari Capai Target', 'Kiraan Terkini', 'Gap Terkini'];
+    const body = metrics.officerItems.map(item => [
+        config.label,
+        metrics.periodLabel,
+        item.displayName,
+        item.officerName,
+        item.total,
+        item.average.toFixed(1),
+        item.hitDays,
+        item.latestCount,
+        item.latestGap
+    ]);
+    const csv = [headers, ...body].map(row => row.map(csvEscape).join(',')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `prestasi-harian-${role}-${officerFilterState[role].day || officerFilterState[role].month || toIsoDate(new Date())}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+async function downloadVisitorExcel() {
+    if (!visitorRows.length) {
+        showError('Tiada data rekod pengunjung untuk download.');
+        return;
+    }
+
+    const rows = buildVisitorExcelRows(getFilteredVisitorRows(), getFilteredVisitorStaffRows());
+    const year = latestVisitorRun?.source_year || new Date().getFullYear();
+    const monthSuffix = selectedVisitorMonth === 'all' ? 'semua-bulan' : monthLabels[Number(selectedVisitorMonth) - 1].toLowerCase();
+    const fileName = `rekod-pengunjung-paza-${year}-${monthSuffix}-${toIsoDate(new Date())}`;
+    try {
+        if (!window.JSZip) throw new Error('JSZip library not loaded.');
+        const blob = await buildVisitorXlsxBlob(rows);
+        triggerDownload(blob, `${fileName}.xlsx`);
+    } catch (_error) {
+        const csv = rows.map(row => row.map(csvEscape).join(',')).join('\r\n');
+        triggerDownload(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }), `${fileName}.csv`);
+    }
+}
+
+function downloadVisitorPdf() {
+    if (!visitorRows.length) {
+        showError('Tiada data rekod pengunjung untuk download.');
+        return;
+    }
+    const JsPdf = window.jspdf?.jsPDF;
+    if (!JsPdf) {
+        showError('Library PDF tidak dapat dimuatkan. Cuba refresh semula dashboard.');
+        return;
+    }
+
+    const year = latestVisitorRun?.source_year || new Date().getFullYear();
+    const fileName = `rekod-pengunjung-paza-${year}-${toIsoDate(new Date())}.pdf`;
+    const doc = new JsPdf({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+    drawVisitorPazaPdfPage(doc, visitorRows, year);
+    doc.addPage('letter', 'landscape');
+    drawVisitorStaffRankingPdfPage(doc, visitorStaffRows, [1, 2, 3, 4, 5, 6]);
+    doc.addPage('letter', 'landscape');
+    drawVisitorStaffRankingPdfPage(doc, visitorStaffRows, [7, 8, 9, 10, 11, 12]);
+    doc.save(fileName);
+}
+
+function buildVisitorExcelRows(sourceRows, sourceStaffRows) {
+    const grouped = new Map();
+    sourceRows.forEach(row => {
+        if (!grouped.has(row.paza)) grouped.set(row.paza, Array(12).fill(0));
+        grouped.get(row.paza)[row.month - 1] += row.visitorCount;
+    });
+    const items = [...grouped.entries()]
+        .map(([paza, values]) => ({
+            paza,
+            values,
+            total: values.reduce((sum, value) => sum + value, 0)
+        }))
+        .sort((a, b) => b.total - a.total || a.paza.localeCompare(b.paza, 'ms-MY'));
+    const totals = Array(12).fill(0);
+    items.forEach(item => item.values.forEach((value, index) => {
+        totals[index] += value;
+    }));
+    const grandTotal = totals.reduce((sum, value) => sum + value, 0);
+
+    const staffRows = buildVisitorStaffMonthlyRankingRows(sourceStaffRows);
+    const reportYear = latestVisitorRun?.source_year || '';
+
+    return [
+        [`LAPORAN BULANAN PENGUNJUNG PAZA TAHUN ${reportYear}`],
+        [`Tarikh Kemaskini: ${latestVisitorRun?.finished_at ? formatShortMalayDate(latestVisitorRun.finished_at) : '-'}`],
+        [],
+        [],
+        ['BIL', 'PAZA', ...monthLabels.map(label => label.toUpperCase()), 'JUMLAH'],
+        ...items.map((item, index) => [index + 1, item.paza, ...item.values, item.total]),
+        ['', 'JUMLAH', ...totals, grandTotal],
+        [],
+        [visitorStaffRankingTitle],
+        ['KEDUDUKAN', ...monthLabels.map(label => label.toUpperCase())],
+        ...staffRows
+    ];
+}
+
+function buildVisitorStaffMonthlyRankingRows(sourceStaffRows) {
+    const rankingByMonth = new Map();
+    for (let month = 1; month <= 12; month++) {
+        rankingByMonth.set(month, sourceStaffRows
+            .filter(row => row.month === month)
+            .sort((a, b) => b.visitorCount - a.visitorCount || a.staffName.localeCompare(b.staffName, 'ms-MY'))
+            .slice(0, 5));
+    }
+
+    return [1, 2, 3, 4, 5].map(rank => [
+        rank,
+        ...monthLabels.map((_label, index) => {
+            const item = rankingByMonth.get(index + 1)[rank - 1];
+            return item ? `${item.staffName} (${item.visitorCount.toLocaleString('ms-MY')})` : '';
+        })
+    ]);
+}
+
+function formatShortMalayDate(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('ms-MY', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+    });
+}
+
+function drawVisitorPazaPdfPage(doc, sourceRows, year) {
+    const items = buildVisitorPazaSummaryItems(sourceRows);
+    const totals = Array(12).fill(0);
+    items.forEach(item => item.values.forEach((value, index) => {
+        totals[index] += value;
+    }));
+    const grandTotal = totals.reduce((sum, value) => sum + value, 0);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text(`LAPORAN BULANAN PENGUNJUNG PAZA TAHUN ${year}`, 396, 70, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Tarikh Kemaskini: ${getVisitorReportDateText()}`, 396, 86, { align: 'center' });
+
+    const startX = 20;
+    let y = 164;
+    const columns = [
+        { label: 'BIL', width: 30, align: 'center' },
+        { label: 'PAZA', width: 82, align: 'left' },
+        ...monthLabels.map(label => ({ label: label.toUpperCase(), width: 47, align: 'right' })),
+        { label: 'JUMLAH', width: 47, align: 'right' }
+    ];
+    const headerHeight = 14;
+    drawVisitorPdfTableRow(doc, startX, y, columns, columns.map(column => column.label), headerHeight, { bold: true, fontSize: 7.2 });
+    y += headerHeight;
+
+    items.forEach((item, index) => {
+        const pazaLines = splitVisitorPdfText(doc, item.paza, columns[1].width - 6, 7.2);
+        const rowHeight = Math.max(17, pazaLines.length * 10 + 6);
+        drawVisitorPdfTableRow(doc, startX, y, columns, [
+            index + 1,
+            item.paza,
+            ...item.values.map(formatPdfNumber),
+            formatPdfNumber(item.total)
+        ], rowHeight, { fontSize: 7.2 });
+        y += rowHeight;
+    });
+
+    drawVisitorPdfTableRow(doc, startX, y, columns, [
+        '',
+        'JUMLAH',
+        ...totals.map(formatPdfNumber),
+        formatPdfNumber(grandTotal)
+    ], 16, { bold: true, fontSize: 7.2 });
+}
+
+function drawVisitorStaffRankingPdfPage(doc, sourceStaffRows, months) {
+    const rankings = buildVisitorStaffRankingByMonth(sourceStaffRows);
+    const startX = 36;
+    let y = 126;
+    const columns = [
+        { label: 'KEDUDUKAN', width: 66, align: 'center' },
+        ...months.map(month => ({ label: monthLabels[month - 1].toUpperCase(), width: 108, align: 'left' }))
+    ];
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(visitorStaffRankingTitle, 40, 94);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Tarikh Kemaskini: ${getVisitorReportDateText()}`, 40, 110);
+
+    drawVisitorPdfTableRow(doc, startX, y, columns, columns.map(column => column.label), 24, { bold: true, fontSize: 8 });
+    y += 24;
+
+    [1, 2, 3, 4, 5].forEach(rank => {
+        drawVisitorPdfTableRow(doc, startX, y, columns, [
+            rank,
+            ...months.map(month => {
+                const item = rankings.get(month)[rank - 1];
+                return item ? `${item.staffName} (${formatPdfNumber(item.visitorCount)})` : '';
+            })
+        ], 70, { fontSize: 8.4 });
+        y += 70;
+    });
+}
+
+function buildVisitorPazaSummaryItems(sourceRows) {
+    const grouped = new Map();
+    sourceRows.forEach(row => {
+        if (!grouped.has(row.paza)) grouped.set(row.paza, Array(12).fill(0));
+        grouped.get(row.paza)[row.month - 1] += row.visitorCount;
+    });
+    return [...grouped.entries()]
+        .map(([paza, values]) => ({
+            paza,
+            values,
+            total: values.reduce((sum, value) => sum + value, 0)
+        }))
+        .sort((a, b) => b.total - a.total || a.paza.localeCompare(b.paza, 'ms-MY'));
+}
+
+function buildVisitorStaffRankingByMonth(sourceStaffRows) {
+    const rankingByMonth = new Map();
+    for (let month = 1; month <= 12; month++) {
+        rankingByMonth.set(month, sourceStaffRows
+            .filter(row => row.month === month)
+            .sort((a, b) => b.visitorCount - a.visitorCount || a.staffName.localeCompare(b.staffName, 'ms-MY'))
+            .slice(0, 5));
+    }
+    return rankingByMonth;
+}
+
+function drawVisitorPdfTableRow(doc, startX, y, columns, values, height, options = {}) {
+    let x = startX;
+    columns.forEach((column, index) => {
+        const value = values[index] == null ? '' : String(values[index]);
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.6);
+        doc.rect(x, y, column.width, height);
+        doc.setFont('helvetica', options.bold ? 'bold' : 'normal');
+        doc.setFontSize(options.fontSize || 8);
+        const align = column.align || 'left';
+        const textX = align === 'right' ? x + column.width - 3 : (align === 'center' ? x + column.width / 2 : x + 3);
+        const maxWidth = Math.max(8, column.width - 6);
+        const lines = splitVisitorPdfText(doc, value, maxWidth, options.fontSize || 8);
+        const lineHeight = (options.fontSize || 8) + 2;
+        const top = options.bold ? y + (height / 2) - ((lines.length - 1) * lineHeight / 2) + 2.5 : y + 9;
+        lines.forEach((line, lineIndex) => {
+            doc.text(line, textX, top + lineIndex * lineHeight, { align });
+        });
+        x += column.width;
+    });
+}
+
+function splitVisitorPdfText(doc, value, maxWidth, fontSize) {
+    doc.setFontSize(fontSize);
+    return doc.splitTextToSize(String(value || ''), maxWidth);
+}
+
+function getVisitorReportDateText() {
+    return latestVisitorRun?.finished_at ? formatShortMalayDate(latestVisitorRun.finished_at) : '-';
+}
+
+function formatPdfNumber(value) {
+    return Number(value || 0).toLocaleString('ms-MY');
+}
+
+async function buildVisitorXlsxBlob(rows) {
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', visitorContentTypesXml());
+    zip.folder('_rels').file('.rels', visitorRootRelsXml());
+    zip.folder('xl').file('workbook.xml', visitorWorkbookXml());
+    zip.folder('xl').folder('_rels').file('workbook.xml.rels', visitorWorkbookRelsXml());
+    zip.folder('xl').file('styles.xml', visitorStylesXml());
+    zip.folder('xl').folder('worksheets').file('sheet1.xml', visitorWorksheetXml(rows));
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+function visitorWorksheetXml(rows) {
+    const sheetData = rows.map((row, rowIndex) => {
+        const rowNumber = rowIndex + 1;
+        const cells = row.map((value, colIndex) => {
+            const ref = `${columnName(colIndex + 1)}${rowNumber}`;
+            const isHeaderRow = rowIndex === 0
+                || row[0] === 'BIL'
+                || row[0] === visitorStaffRankingTitle
+                || row[0] === 'KEDUDUKAN';
+            const isNumeric = isVisitorNumericCell(value);
+            const style = getVisitorCellStyle({ isHeaderRow, isNumeric, isTableRow: row.length > 1, colIndex });
+            if (isNumeric) return `<c r="${ref}"${style}><v>${String(value).replace(/,/g, '')}</v></c>`;
+            return `<c r="${ref}" t="inlineStr"${style}><is><t>${escapeXml(value)}</t></is></c>`;
+        }).join('');
+        return `<row r="${rowNumber}">${cells}</row>`;
+    }).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="8" customWidth="1"/><col min="2" max="2" width="34" customWidth="1"/><col min="3" max="15" width="14" customWidth="1"/></cols><sheetData>${sheetData}</sheetData></worksheet>`;
+}
+
+function getVisitorCellStyle({ isHeaderRow, isNumeric, isTableRow, colIndex }) {
+    if (isHeaderRow && isTableRow) return ' s="4"';
+    if (isHeaderRow) return ' s="1"';
+    if (isNumeric && colIndex > 0 && isTableRow) return ' s="5"';
+    if (isNumeric && colIndex > 0) return ' s="2"';
+    if (isTableRow) return ' s="3"';
+    return '';
+}
+
+function visitorContentTypesXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+}
+
+function visitorRootRelsXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+}
+
+function visitorWorkbookXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Rekod Pengunjung" sheetId="1" r:id="rId1"/></sheets></workbook>';
+}
+
+function visitorWorkbookRelsXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+}
+
+function visitorStylesXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD9E2EC"/></left><right style="thin"><color rgb="FFD9E2EC"/></right><top style="thin"><color rgb="FFD9E2EC"/></top><bottom style="thin"><color rgb="FFD9E2EC"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/><xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/></cellXfs></styleSheet>';
+}
+
+function isVisitorNumericCell(value) {
+    return typeof value === 'number' || /^-?\d+(?:,\d{3})*(?:\.\d+)?$/.test(String(value || '').trim());
+}
+
+function triggerDownload(blob, fileName) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+async function downloadPendingValidationExcel() {
+    showError('Eksport rekod pemohon dinyahaktifkan untuk perlindungan data peribadi.');
+}
+
+async function buildPendingValidationTemplateWorkbook(branchRows, branch) {
+    if (!window.JSZip) {
+        throw new Error('JSZip library not loaded.');
+    }
+    const templateData = window.PENDING_VALIDATION_TEMPLATE_BASE64
+        ? base64ToArrayBuffer(window.PENDING_VALIDATION_TEMPLATE_BASE64)
+        : await fetchPendingValidationTemplateWorkbook();
+    const zip = await window.JSZip.loadAsync(templateData);
+    const workbookInfo = await getWorkbookSheetInfo(zip);
+    const mainPath = workbookInfo.get('26.6.2026');
+    const unmappedPath = workbookInfo.get('Unmapped');
+    if (!mainPath || !unmappedPath) throw new Error('Worksheet template tidak lengkap.');
+
+    const range = getDateRangeFromDates(branchRows.map(row => row.appliedDate));
+    const reportRows = buildPendingValidationExportRows(branchRows);
+    const titleDate = formatFullMalayDate(dataRange.last || range.last).toLocaleUpperCase('ms-MY');
+    let mainXml = await readZipText(zip, mainPath);
+    const totalStyleId = await ensurePendingValidationWorkbookStyles(zip);
+    const sharedStrings = await readSharedStrings(zip);
+    const detailToRow = getTemplateDetailRowsFromSheetXml(mainXml, sharedStrings);
+    mainXml = setSheetStringCell(mainXml, 'B2', `DATA DIKEMASKINI SEHINGGA ${titleDate}`);
+    reportRows.forEach(row => {
+        const excelRow = detailToRow.get(normalizeKey(row.detail));
+        if (!excelRow) return;
+        row.months.forEach((value, index) => {
+            mainXml = setSheetNumberCell(mainXml, `${columnName(6 + index)}${excelRow}`, value);
+        });
+        mainXml = setSheetFormulaCell(mainXml, `R${excelRow}`, `SUM(F${excelRow}:Q${excelRow})`, row.total, ` s="${totalStyleId}"`);
+    });
+    writeZipFile(zip, mainPath, mainXml);
+
+    const unmappedXml = buildUnmappedSheetXml(branchRows.filter(row => row.isUnmapped));
+    writeZipFile(zip, unmappedPath, unmappedXml);
+
+    const output = await zip.generateAsync({ type: 'arraybuffer' });
+    return new Blob([output], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+async function fetchPendingValidationTemplateWorkbook() {
+    throw new Error('Template eksport dinyahaktifkan untuk perlindungan data peribadi.');
+}
+
+function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    return bytes.buffer;
+}
+
+async function getWorkbookSheetInfo(zip) {
+    const workbookXml = await readZipText(zip, 'xl/workbook.xml');
+    const relsXml = await readZipText(zip, 'xl/_rels/workbook.xml.rels');
+    const relTargets = new Map([...relsXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)]
+        .map(match => [match[1], `xl/${match[2].replace(/^\/?xl\//, '')}`]));
+    return new Map([...workbookXml.matchAll(/<sheet[^>]*name="([^"]+)"[^>]*(?:r:id|id)="([^"]+)"/g)]
+        .map(match => [decodeXml(match[1]), relTargets.get(match[2])]));
+}
+
+async function readZipText(zip, filePath) {
+    const entry = getZipEntry(zip, filePath);
+    if (!entry.file) throw new Error(`Template file missing: ${filePath}`);
+    return entry.file.async('string');
+}
+
+function writeZipFile(zip, filePath, content) {
+    zip.file(getZipEntry(zip, filePath).path, content);
+}
+
+function getZipEntry(zip, filePath) {
+    const text = String(filePath || '');
+    const candidates = [...new Set([
+        text,
+        text.replace(/\//g, '\\'),
+        text.replace(/\\/g, '/')
+    ])];
+    for (const candidate of candidates) {
+        const file = zip.file(candidate);
+        if (file) return { file, path: candidate };
+    }
+    return { file: null, path: text };
+}
+
+function getMainTemplateRowForDetail(detail) {
+    const index = pendingValidationTemplateRows.findIndex(row => normalizeKey(row.template_detail) === normalizeKey(detail));
+    return index === -1 ? null : index + 6;
+}
+
+async function ensurePendingValidationWorkbookStyles(zip) {
+    const stylesPath = 'xl/styles.xml';
+    const file = getZipEntry(zip, stylesPath).file;
+    if (!file) return 23;
+
+    let stylesXml = await file.async('string');
+    const totalFillId = getOrAppendWorkbookFill(stylesXml, 'FFE97132');
+    stylesXml = totalFillId.stylesXml;
+    const totalStyleXml = `<xf numFmtId="3" fontId="7" fillId="${totalFillId.fillId}" borderId="8" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`;
+    const cellXfsMatch = stylesXml.match(/<cellXfs[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/cellXfs>/);
+    if (!cellXfsMatch) return 23;
+
+    const existingXfs = [...cellXfsMatch[2].matchAll(/<xf[^>]*\/>|<xf[\s\S]*?<\/xf>/g)].map(match => match[0]);
+    const existingIndex = existingXfs.indexOf(totalStyleXml);
+    if (existingIndex >= 0) return existingIndex;
+
+    const nextStyleId = Number(cellXfsMatch[1]);
+    stylesXml = stylesXml.replace(/<cellXfs([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/cellXfs>/, (_match, before, _count, after, content) => {
+        return `<cellXfs${before}count="${nextStyleId + 1}"${after}>${content}${totalStyleXml}</cellXfs>`;
+    });
+    writeZipFile(zip, stylesPath, stylesXml);
+    return nextStyleId;
+}
+
+function getOrAppendWorkbookFill(stylesXml, rgb) {
+    const fillXml = `<fill><patternFill patternType="solid"><fgColor rgb="${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
+    const fillsMatch = stylesXml.match(/<fills[^>]*count="(\d+)"[^>]*>([\s\S]*?)<\/fills>/);
+    if (!fillsMatch) return { stylesXml, fillId: 6 };
+
+    const fills = [...fillsMatch[2].matchAll(/<fill>[\s\S]*?<\/fill>/g)].map(match => match[0]);
+    const existingIndex = fills.indexOf(fillXml);
+    if (existingIndex >= 0) return { stylesXml, fillId: existingIndex };
+
+    const nextFillId = Number(fillsMatch[1]);
+    const nextStylesXml = stylesXml.replace(/<fills([^>]*)count="(\d+)"([^>]*)>([\s\S]*?)<\/fills>/, (_match, before, _count, after, content) => {
+        return `<fills${before}count="${nextFillId + 1}"${after}>${content}${fillXml}</fills>`;
+    });
+    return { stylesXml: nextStylesXml, fillId: nextFillId };
+}
+
+async function readSharedStrings(zip) {
+    const file = getZipEntry(zip, 'xl/sharedStrings.xml').file;
+    if (!file) return [];
+    const xml = await file.async('string');
+    return [...xml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(match => {
+        const text = [...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(part => decodeXml(part[1])).join('');
+        return text;
+    });
+}
+
+function getTemplateDetailRowsFromSheetXml(sheetXml, sharedStrings) {
+    const result = new Map();
+    const rows = [...sheetXml.matchAll(/<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)];
+    rows.forEach(match => {
+        const rowNumber = Number(match[1]);
+        if (rowNumber < 6) return;
+        const cell = match[2].match(/<c[^>]*r="E\d+"[^>]*>([\s\S]*?)<\/c>/);
+        if (!cell) return;
+        const fullCell = cell[0];
+        const valueMatch = cell[1].match(/<v>([\s\S]*?)<\/v>/);
+        const inlineMatch = cell[1].match(/<t[^>]*>([\s\S]*?)<\/t>/);
+        let value = '';
+        if (/t="s"/.test(fullCell) && valueMatch) {
+            value = sharedStrings[Number(valueMatch[1])] || '';
+        } else if (inlineMatch) {
+            value = decodeXml(inlineMatch[1]);
+        } else if (valueMatch) {
+            value = decodeXml(valueMatch[1]);
+        }
+        if (value && !normalizeKey(value).startsWith('JUMLAH')) {
+            result.set(normalizeKey(value), rowNumber);
+        }
+    });
+    return result;
+}
+
+function setSheetStringCell(xml, ref, value) {
+    return setSheetCellXml(xml, ref, `<is><t>${escapeXml(value)}</t></is>`, ' t="inlineStr"');
+}
+
+function setSheetNumberCell(xml, ref, value) {
+    return setSheetCellXml(xml, ref, `<v>${Number(value || 0)}</v>`);
+}
+
+function setSheetFormulaCell(xml, ref, formula, cachedValue = null, extraAttrs = '') {
+    const valueXml = cachedValue === null || cachedValue === undefined ? '' : `<v>${Number(cachedValue || 0)}</v>`;
+    return setSheetCellXml(xml, ref, `<f>${escapeXml(formula)}</f>${valueXml}`, extraAttrs);
+}
+
+function setSheetCellXml(xml, ref, innerXml, extraAttrs = '') {
+    const escapedRef = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const selfClosingPattern = new RegExp(`<c([^>]*)r="${escapedRef}"([^>]*)\\/>`);
+    if (selfClosingPattern.test(xml)) {
+        return xml.replace(selfClosingPattern, (_match, before, after) => `<c${before}r="${ref}"${mergeCellAttrs(after, extraAttrs)}>${innerXml}</c>`);
+    }
+    const cellPattern = new RegExp(`<c([^>\\/]*)r="${escapedRef}"([^>]*)>([\\s\\S]*?)<\\/c>`);
+    if (cellPattern.test(xml)) {
+        return xml.replace(cellPattern, (_match, before, after) => `<c${before}r="${ref}"${mergeCellAttrs(after, extraAttrs)}>${innerXml}</c>`);
+    }
+    const rowNumber = ref.match(/\d+/)?.[0];
+    if (!rowNumber) return xml;
+    const rowPattern = new RegExp(`(<row[^>]*r="${rowNumber}"[^>]*>)([\\s\\S]*?)(<\\/row>)`);
+    return xml.replace(rowPattern, `$1$2<c r="${ref}"${extraAttrs}>${innerXml}</c>$3`);
+}
+
+function mergeCellAttrs(existingAttrs, extraAttrs) {
+    let attrs = String(existingAttrs || '').replace(/\/\s*$/, '');
+    if (extraAttrs.includes('t="inlineStr"')) {
+        attrs = attrs.replace(/\s+t="[^"]*"/, '');
+    }
+    if (/\s+s="/.test(extraAttrs)) {
+        attrs = attrs.replace(/\s+s="[^"]*"/, '');
+    }
+    return `${attrs}${extraAttrs}`;
+}
+
+function buildUnmappedSheetXml(unmappedRows) {
+    const rows = [
+        ['Skim Bantuan', 'Tarikh Mohon'],
+        ...unmappedRows.map(row => [row.systemScheme, formatCsvDateTime(row.appliedDate)])
+    ];
+    const sheetData = rows.map((row, rowIndex) => {
+        const rowNumber = rowIndex + 1;
+        const cells = row.map((value, colIndex) => {
+            const ref = `${columnName(colIndex + 1)}${rowNumber}`;
+            return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value || '')}</t></is></c>`;
+        }).join('');
+        return `<row r="${rowNumber}">${cells}</row>`;
+    }).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetData>${sheetData}</sheetData>
+</worksheet>`;
+}
+
+function columnName(number) {
+    let name = '';
+    let current = number;
+    while (current > 0) {
+        const mod = (current - 1) % 26;
+        name = String.fromCharCode(65 + mod) + name;
+        current = Math.floor((current - mod) / 26);
+    }
+    return name;
+}
+
+function decodeXml(value) {
+    return String(value || '')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+}
+
+function buildPendingValidationWorkbookHtml(branchRows, branch) {
+    const range = getDateRangeFromDates(branchRows.map(row => row.appliedDate));
+    const reportRows = buildPendingValidationExportRows(branchRows);
+    const unmappedRows = branchRows.filter(row => row.isUnmapped);
+    const mainRows = [
+        [textCell('LAPORAN PERMOHONAN BANTUAN YANG BELUM DIPERAKU', 17, 'Title')],
+        [textCell(`DATA DIKEMASKINI SEHINGGA ${formatFullMalayDate(dataRange.last || range.last)}`, 17, 'Title')],
+        [textCell(`CAWANGAN: ${branch}`, 17, 'Plain')],
+        [],
+        ['KATEGORI', 'BIL', 'SKIM BANTUAN', 'PERINCIAN SKIM BANTUAN (i-Zakat)', ...pendingValidationMonthLabels, 'JUMLAH'].map(value => textCell(value, 1, 'Header')),
+        ...reportRows.map(row => [
+            textCell(row.category),
+            numberCell(row.bil || ''),
+            textCell(row.scheme),
+            textCell(row.detail),
+            ...row.months.map(numberCell),
+            numberCell(row.total)
+        ])
+    ];
+    const unmappedSheetRows = [
+        ['Skim Bantuan', 'Tarikh Mohon', 'Cawangan', 'PAZA'].map(value => textCell(value, 1, 'Header')),
+        ...unmappedRows.map(row => [
+            textCell(row.systemScheme),
+            textCell(formatShortDate(row.appliedDate)),
+            textCell(row.branch),
+            textCell(row.subBranch)
+        ])
+    ];
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Title"><Font ss:Bold="1"/><Alignment ss:Horizontal="Left"/></Style>
+  <Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F4E78" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+  <Style ss:ID="Plain"/>
+ </Styles>
+ ${worksheetXml('Belum Diperaku', mainRows)}
+ ${worksheetXml('Unmapped', unmappedSheetRows)}
+</Workbook>`;
+}
+
+function worksheetXml(name, rows) {
+    return `<Worksheet ss:Name="${escapeXml(name)}"><Table>${rows.map(row => `<Row>${row.join('')}</Row>`).join('')}</Table></Worksheet>`;
+}
+
+function textCell(value, mergeAcross = 1, style = 'Plain') {
+    const merge = mergeAcross > 1 ? ` ss:MergeAcross="${mergeAcross - 1}"` : '';
+    return `<Cell ss:StyleID="${style}"${merge}><Data ss:Type="String">${escapeXml(value ?? '')}</Data></Cell>`;
+}
+
+function numberCell(value) {
+    if (value === '' || value === null || value === undefined) return '<Cell><Data ss:Type="String"></Data></Cell>';
+    return `<Cell><Data ss:Type="Number">${Number(value || 0)}</Data></Cell>`;
+}
+
+function buildPendingValidationExportRows(branchRows) {
+    const counts = new Map();
+    branchRows.filter(row => !row.isUnmapped).forEach(row => {
+        const current = counts.get(row.mappedDetail) || Array(12).fill(0);
+        if (row.applicationMonth >= 1 && row.applicationMonth <= 12) current[row.applicationMonth - 1] += row.applicationCount;
+        counts.set(row.mappedDetail, current);
+    });
+    return pendingValidationTemplateRows.map(template => {
+        const months = counts.get(template.template_detail) || Array(12).fill(0);
+        return {
+            category: template.template_category || '',
+            bil: template.template_bil,
+            scheme: template.template_scheme || '',
+            detail: template.template_detail || '',
+            months,
+            total: months.reduce((sum, value) => sum + value, 0)
+        };
+    });
 }
 
 function renderLineChart(canvasId, labels, data, isPercent) {
@@ -446,7 +3573,7 @@ function renderLineChart(canvasId, labels, data, isPercent) {
         if (point.value > 0) {
             ctx.fillStyle = '#142334';
             ctx.font = '800 12px Segoe UI, Arial';
-            ctx.fillText(isPercent ? `${point.value.toFixed(1)}%` : String(point.value), point.x, Math.max(chart.top, point.y - 22));
+            ctx.fillText(isPercent ? `${point.value.toFixed(1)}%` : formatChartValue(point.value), point.x, Math.max(chart.top, point.y - 22));
         }
 
         ctx.fillStyle = '#64748b';
@@ -460,7 +3587,7 @@ function renderLineChart(canvasId, labels, data, isPercent) {
     for (let index = 0; index <= 4; index++) {
         const value = Math.round((max / 4) * index);
         const y = chart.bottom - (index / 4) * chart.height;
-        ctx.fillText(isPercent ? `${value}%` : String(value), chart.left - 8, y);
+        ctx.fillText(isPercent ? `${value}%` : formatChartValue(value), chart.left - 8, y);
     }
 
     if (!data.some(value => value > 0)) {
@@ -471,23 +3598,347 @@ function renderLineChart(canvasId, labels, data, isPercent) {
     }
 }
 
+function renderHorizontalBarChart(canvasId, items) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(460, Math.floor(rect.width || canvas.parentElement.clientWidth || 640));
+    const height = Math.max(260, 72 + Math.max(items.length, 1) * 34);
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.clearRect(0, 0, width, height);
+
+    const chart = { left: 180, top: 24, right: width - 34, bottom: height - 28 };
+    chart.width = chart.right - chart.left;
+    const max = Math.max(...items.map(item => item.value), 1);
+    const barHeight = 20;
+    const gap = 14;
+
+    ctx.font = '12px Segoe UI, Arial';
+    ctx.textBaseline = 'middle';
+
+    if (!items.length) {
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'center';
+        ctx.fillText('Tiada data untuk dipaparkan', width / 2, height / 2);
+        return;
+    }
+
+    items.forEach((item, index) => {
+        const y = chart.top + index * (barHeight + gap);
+        const barWidth = Math.max(3, (item.value / max) * chart.width);
+
+        ctx.fillStyle = '#43576a';
+        ctx.textAlign = 'right';
+        ctx.fillText(truncateText(ctx, item.label, chart.left - 18), chart.left - 10, y + barHeight / 2);
+
+        ctx.fillStyle = '#d9e3ea';
+        ctx.fillRect(chart.left, y, chart.width, barHeight);
+        ctx.fillStyle = '#0f6bce';
+        ctx.fillRect(chart.left, y, barWidth, barHeight);
+
+        ctx.fillStyle = '#142334';
+        ctx.textAlign = 'left';
+        ctx.fillText(item.value.toLocaleString('ms-MY'), chart.left + barWidth + 8, y + barHeight / 2);
+    });
+}
+
+function truncateText(ctx, text, maxWidth) {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let output = text;
+    while (output.length > 3 && ctx.measureText(`${output}...`).width > maxWidth) {
+        output = output.slice(0, -1);
+    }
+    return `${output}...`;
+}
+
+function renderMultiSeriesLineChart(canvasId, labels, series, options = {}) {
+    const canvas = document.getElementById(canvasId);
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(460, Math.floor(rect.width || canvas.parentElement.clientWidth || 640));
+    const requestedHeight = Number(options.height || 0);
+    const height = requestedHeight > 0
+        ? requestedHeight
+        : (options.large ? (window.innerWidth < 820 ? 340 : 410) : (window.innerWidth < 820 ? 280 : 310));
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    canvas.style.height = `${height}px`;
+    canvas._chartCssWidth = width;
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const chart = { left: 48, top: 44, right: width - 14, bottom: height - 52 };
+    chart.width = chart.right - chart.left;
+    chart.height = chart.bottom - chart.top;
+    const values = series.flatMap(item => item.data);
+    const scale = getNiceYAxisScale(Math.max(...values, 0));
+    const step = chart.width / Math.max(labels.length - 1, 1);
+    const labelEvery = options.labelEvery || 1;
+    const valueLabels = options.valueLabels || 'peak';
+
+    ctx.strokeStyle = '#d7e1ea';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(chart.left, chart.top);
+    ctx.lineTo(chart.left, chart.bottom);
+    ctx.lineTo(chart.right, chart.bottom);
+    ctx.stroke();
+
+    drawMultiSeriesLegend(ctx, chart, series);
+
+    series.forEach((item, seriesIndex) => {
+        const points = item.data.map((value, index) => ({
+            x: chart.left + index * step,
+            y: chart.bottom - (value / scale.axisMax) * chart.height,
+            value
+        }));
+        if (!points.length) return;
+
+        ctx.beginPath();
+        points.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y));
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        points.forEach(point => {
+            if (point.value <= 0) return;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = item.color;
+            ctx.fill();
+        });
+
+        drawPointValueLabels(ctx, chart, points, valueLabels, seriesIndex);
+    });
+
+    ctx.font = '11px Segoe UI, Arial';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    labels.forEach((label, index) => {
+        if (index % labelEvery === 0 || index === labels.length - 1) {
+            ctx.fillText(label, chart.left + index * step, chart.bottom + 12);
+        }
+    });
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    scale.ticks.forEach(value => {
+        const y = chart.bottom - (value / scale.axisMax) * chart.height;
+        ctx.fillText(formatChartValue(value), chart.left - 8, y);
+    });
+
+    if (!values.some(value => value > 0)) {
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'center';
+        ctx.font = '800 14px Segoe UI, Arial';
+        ctx.fillText('Tiada data untuk filter ini', chart.left + chart.width / 2, chart.top + chart.height / 2);
+    }
+
+    setupLineChartTooltip(canvas, labels, series, chart, step, options.tooltipId);
+}
+
+function setupLineChartTooltip(canvas, labels, series, chart, step, tooltipId) {
+    const tooltip = tooltipId ? document.getElementById(tooltipId) : null;
+    if (!tooltip || !labels.length) {
+        if (tooltip) tooltip.hidden = true;
+        canvas.onpointermove = null;
+        canvas.onpointerdown = null;
+        canvas.onpointerleave = null;
+        canvas.onkeydown = null;
+        canvas.onblur = null;
+        return;
+    }
+
+    tooltip.hidden = true;
+    canvas._tooltipIndex = Math.min(Number(canvas._tooltipIndex || 0), labels.length - 1);
+
+    const showAtIndex = (index, displayX, displayY) => {
+        const safeIndex = Math.max(0, Math.min(labels.length - 1, index));
+        canvas._tooltipIndex = safeIndex;
+        tooltip.replaceChildren();
+
+        const heading = document.createElement('strong');
+        heading.textContent = labels[safeIndex] || '-';
+        tooltip.appendChild(heading);
+
+        let total = 0;
+        series.forEach(item => {
+            const value = Number(item.data[safeIndex] || 0);
+            total += value;
+            const row = document.createElement('span');
+            row.className = 'chart-tooltip-row';
+            const swatch = document.createElement('i');
+            swatch.style.backgroundColor = item.color;
+            const label = document.createElement('span');
+            label.textContent = item.label;
+            const number = document.createElement('b');
+            number.textContent = value.toLocaleString('ms-MY');
+            row.append(swatch, label, number);
+            tooltip.appendChild(row);
+        });
+
+        const totalRow = document.createElement('span');
+        totalRow.className = 'chart-tooltip-total';
+        const totalLabel = document.createElement('span');
+        totalLabel.textContent = 'Jumlah';
+        const totalValue = document.createElement('b');
+        totalValue.textContent = total.toLocaleString('ms-MY');
+        totalRow.append(totalLabel, totalValue);
+        tooltip.appendChild(totalRow);
+        tooltip.hidden = false;
+
+        const wrap = tooltip.parentElement;
+        const maxLeft = Math.max(8, wrap.clientWidth - tooltip.offsetWidth - 8);
+        const maxTop = Math.max(8, wrap.clientHeight - tooltip.offsetHeight - 8);
+        tooltip.style.left = `${Math.max(8, Math.min(displayX + 14, maxLeft))}px`;
+        tooltip.style.top = `${Math.max(8, Math.min(displayY - tooltip.offsetHeight - 14, maxTop))}px`;
+    };
+
+    const showFromPointer = event => {
+        const bounds = canvas.getBoundingClientRect();
+        const displayX = event.clientX - bounds.left;
+        const displayY = event.clientY - bounds.top;
+        const chartX = displayX * ((canvas._chartCssWidth || bounds.width) / Math.max(bounds.width, 1));
+        const chartY = displayY * ((canvas.height / (window.devicePixelRatio || 1)) / Math.max(bounds.height, 1));
+        if (chartX < chart.left || chartX > chart.right || chartY < chart.top || chartY > chart.bottom) {
+            if (event.pointerType === 'mouse') tooltip.hidden = true;
+            return;
+        }
+        const index = labels.length === 1 ? 0 : Math.round((chartX - chart.left) / Math.max(step, 1));
+        showAtIndex(index, displayX, displayY);
+    };
+
+    canvas.onpointermove = showFromPointer;
+    canvas.onpointerdown = showFromPointer;
+    canvas.onpointerleave = event => {
+        if (event.pointerType === 'mouse') tooltip.hidden = true;
+    };
+    canvas.onkeydown = event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let index = Number(canvas._tooltipIndex || 0);
+        if (event.key === 'ArrowLeft') index--;
+        if (event.key === 'ArrowRight') index++;
+        if (event.key === 'Home') index = 0;
+        if (event.key === 'End') index = labels.length - 1;
+        index = Math.max(0, Math.min(labels.length - 1, index));
+        const bounds = canvas.getBoundingClientRect();
+        const chartPointX = chart.left + index * step;
+        const displayX = chartPointX * (bounds.width / Math.max(canvas._chartCssWidth || bounds.width, 1));
+        showAtIndex(index, displayX, Math.max(80, bounds.height / 2));
+    };
+    canvas.onblur = () => { tooltip.hidden = true; };
+}
+
+function drawPointValueLabels(ctx, chart, points, mode, seriesIndex) {
+    if (mode === 'none') return;
+    const candidates = mode === 'all'
+        ? points.filter(point => point.value > 0)
+        : [points.reduce((best, point) => point.value > best.value ? point : best, points[0])].filter(point => point?.value > 0);
+
+    ctx.fillStyle = '#142334';
+    ctx.font = '800 11px Segoe UI, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    candidates.forEach((point, index) => {
+        const offset = mode === 'all' ? 16 + ((seriesIndex + index) % 2) * 10 : 18;
+        ctx.fillText(formatChartValue(point.value), point.x, Math.max(chart.top + 2, point.y - offset));
+    });
+}
+
+function getNiceYAxisScale(maxValue) {
+    const targetTicks = 6;
+    const value = Math.max(0, Number(maxValue || 0));
+    if (!value) {
+        return { axisMax: 1, tickStep: 1, ticks: [0, 1] };
+    }
+
+    const rawStep = value / Math.max(targetTicks - 1, 1);
+    const tickStep = getNiceTickStep(rawStep);
+    const axisMax = Math.max(tickStep, Math.ceil(value / tickStep) * tickStep);
+    const ticks = [];
+
+    for (let tick = 0; tick <= axisMax + tickStep * 0.5; tick += tickStep) {
+        ticks.push(Math.round(tick));
+    }
+
+    return { axisMax, tickStep, ticks };
+}
+
+function getNiceTickStep(rawStep) {
+    const exponent = Math.floor(Math.log10(Math.max(rawStep, 1)));
+    const magnitude = 10 ** exponent;
+    const fraction = rawStep / magnitude;
+    const niceFraction = fraction <= 1
+        ? 1
+        : (fraction <= 2 ? 2 : (fraction <= 5 ? 5 : 10));
+    return niceFraction * magnitude;
+}
+
+function drawMultiSeriesLegend(ctx, chart, series) {
+    let x = chart.left;
+    const y = chart.top - 24;
+    ctx.font = '800 12px Segoe UI, Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    series.forEach(item => {
+        const width = ctx.measureText(item.label).width;
+        if (x + width + 34 > chart.right) x = chart.left;
+        ctx.fillStyle = item.color;
+        ctx.fillRect(x, y - 5, 10, 10);
+        ctx.fillStyle = '#334155';
+        ctx.fillText(item.label, x + 16, y);
+        x += width + 42;
+    });
+}
+
 function switchTab(panelId) {
+    if (panelId !== 'applicationChartDetailPanel' && document.getElementById('applicationChartDetailPanel')?.classList.contains('active')) {
+        activeApplicationChartDetail = null;
+        hideApplicationChartTooltip();
+    }
+    const menuPanelId = panelId === 'applicationChartDetailPanel' ? 'applicationPanel' : panelId;
     document.querySelectorAll('.tab-button').forEach(button => {
-        button.classList.toggle('active', button.dataset.tab === panelId);
+        button.classList.toggle('active', button.dataset.tab === menuPanelId);
     });
     document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === panelId);
     });
+    closeDashboardDrawer();
     if (panelId === 'fiveDayPanel') updateTrendChart(approvedFilteredRows);
+    if (panelId === 'applicationPanel') updateApplicationDashboard();
+    if (panelId === 'applicationChartDetailPanel') window.requestAnimationFrame(renderApplicationChartDetail);
+    if (panelId === 'pendingValidationPanel') updatePendingValidationDashboard();
+    if (panelId === 'certifierPerformancePanel') updateOfficerDashboard('certifier');
+    if (panelId === 'approverPerformancePanel') updateOfficerDashboard('approver');
+    if (panelId === 'visitorPanel') updateVisitorDashboard();
+    if (panelId === 'comparisonPanel') window.requestAnimationFrame(updateComparisonDashboard);
 }
 
-function populateSelect(id, values, allLabel) {
-    const select = document.getElementById(id);
-    const unique = getUniqueValues(values);
-    select.innerHTML = [
-        `<option value="all">${escapeHtml(allLabel)}</option>`,
-        ...unique.map(value => `<option value="${escapeHtml(value)}">${escapeHtml(toProperCaps(value))}</option>`)
-    ].join('');
+function toggleDashboardDrawer(event) {
+    event.stopPropagation();
+    const tabs = document.getElementById('dashboardTabs');
+    const toggle = document.getElementById('drawerToggle');
+    const isOpen = tabs.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(isOpen));
+}
+
+function closeDashboardDrawer() {
+    const tabs = document.getElementById('dashboardTabs');
+    const toggle = document.getElementById('drawerToggle');
+    if (!tabs || !toggle) return;
+    tabs.classList.remove('open');
+    toggle.setAttribute('aria-expanded', 'false');
 }
 
 function getUniqueValues(values) {
@@ -512,13 +3963,17 @@ function setupMultiSelectEvents(config) {
         config.onChange();
     });
     document.getElementById(config.menuId).addEventListener('click', event => event.stopPropagation());
+    const searchInput = getMultiSelectSearchInput(config.optionsId);
+    if (searchInput) {
+        searchInput.addEventListener('input', () => filterSelectOptions(config.optionsId, searchInput.value));
+    }
 }
 
 function renderMultiSelect(config) {
     const optionsElement = document.getElementById(config.optionsId);
     if (!config.options.length) {
-        optionsElement.innerHTML = '<div class="empty-state">Tiada skim dijumpai.</div>';
-        updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel);
+        optionsElement.innerHTML = '<div class="empty-state">Tiada pilihan dijumpai.</div>';
+        updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel, config.preserveCase, config.emptyLabel);
         return;
     }
 
@@ -527,7 +3982,7 @@ function renderMultiSelect(config) {
         return `
             <label for="${inputId}">
                 <input type="checkbox" id="${inputId}" value="${escapeHtml(option)}" ${config.selected.includes(option) ? 'checked' : ''}>
-                <span>${escapeHtml(toProperCaps(option))}</span>
+                <span>${escapeHtml(formatMultiSelectLabel(option, config.preserveCase))}</span>
             </label>
         `;
     }).join('');
@@ -540,39 +3995,83 @@ function renderMultiSelect(config) {
             config.onChange();
         });
     });
-    updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel);
+    updateMultiSelectToggle(config.toggleId, config.selected, config.options, config.allLabel, config.preserveCase, config.emptyLabel);
+    const searchInput = getMultiSelectSearchInput(config.optionsId);
+    if (searchInput) filterSelectOptions(config.optionsId, searchInput.value);
 }
 
 function refreshMultiSelect(config) {
+    const currentConfig = getMultiSelectConfigs().find(item => item.selectedKey === config.selectedKey) || config;
     renderMultiSelect({
-        ...config,
-        allLabel: 'Semua skim',
-        options: getMultiSelectOptions(config.selectedKey),
-        selected: getMultiSelectSelection(config.selectedKey)
+        ...currentConfig,
+        options: getMultiSelectOptions(currentConfig.selectedKey),
+        selected: getMultiSelectSelection(currentConfig.selectedKey)
     });
 }
 
 function getMultiSelectOptions(key) {
-    return key === 'table' ? tableSchemeOptions : schemeOptions;
+    const options = {
+        dashboardBranch: branchOptions,
+        dashboardScheme: schemeOptions,
+        dashboardType: typeOptions,
+        tableBranch: tableBranchOptions,
+        tableScheme: tableSchemeOptions,
+        tableType: tableTypeOptions,
+        applicationBranch: applicationBranchOptions,
+        applicationScheme: applicationSchemeOptions,
+        applicationType: applicationTypeOptions,
+        pendingValidationBranch: pendingValidationBranchOptions,
+        comparisonBranch: comparisonBranchOptions,
+        comparisonScheme: comparisonSchemeOptions,
+        comparisonType: comparisonTypeOptions
+    };
+    return options[key] || [];
 }
 
 function getMultiSelectSelection(key) {
-    return key === 'table' ? selectedTableSchemes : selectedSchemes;
+    const selections = {
+        dashboardBranch: selectedBranches,
+        dashboardScheme: selectedSchemes,
+        dashboardType: selectedTypes,
+        tableBranch: selectedTableBranches,
+        tableScheme: selectedTableSchemes,
+        tableType: selectedTableTypes,
+        applicationBranch: selectedApplicationBranches,
+        applicationScheme: selectedApplicationSchemes,
+        applicationType: selectedApplicationTypes,
+        pendingValidationBranch: selectedPendingValidationBranches,
+        comparisonBranch: selectedComparisonBranches,
+        comparisonScheme: selectedComparisonSchemes,
+        comparisonType: selectedComparisonTypes
+    };
+    return selections[key] || [];
 }
 
 function setMultiSelectSelection(key, selected) {
-    if (key === 'table') selectedTableSchemes = [...selected];
-    else selectedSchemes = [...selected];
+    const values = [...selected];
+    if (key === 'dashboardBranch') selectedBranches = values;
+    else if (key === 'dashboardScheme') selectedSchemes = values;
+    else if (key === 'dashboardType') selectedTypes = values;
+    else if (key === 'tableBranch') selectedTableBranches = values;
+    else if (key === 'tableScheme') selectedTableSchemes = values;
+    else if (key === 'tableType') selectedTableTypes = values;
+    else if (key === 'applicationBranch') selectedApplicationBranches = values;
+    else if (key === 'applicationScheme') selectedApplicationSchemes = values;
+    else if (key === 'applicationType') selectedApplicationTypes = values;
+    else if (key === 'pendingValidationBranch') selectedPendingValidationBranches = values;
+    else if (key === 'comparisonBranch') selectedComparisonBranches = values;
+    else if (key === 'comparisonScheme') selectedComparisonSchemes = values;
+    else if (key === 'comparisonType') selectedComparisonTypes = values;
 }
 
-function updateMultiSelectToggle(toggleId, selected, options, allLabel) {
+function updateMultiSelectToggle(toggleId, selected, options, allLabel, preserveCase = false, emptyLabel = 'Tiada skim dipilih') {
     const toggle = document.getElementById(toggleId);
     if (!selected.length) {
-        toggle.textContent = 'Tiada skim dipilih';
+        toggle.textContent = emptyLabel;
     } else if (selected.length === options.length) {
         toggle.textContent = `${allLabel} (${options.length})`;
     } else if (selected.length === 1) {
-        toggle.textContent = toProperCaps(selected[0]);
+        toggle.textContent = formatMultiSelectLabel(selected[0], preserveCase);
     } else {
         toggle.textContent = `${selected.length} skim dipilih`;
     }
@@ -589,8 +4088,19 @@ function toggleMultiSelectMenu(menuId, toggleId) {
 
 function closeMultiSelectMenus() {
     [
+        ['branchFilterMenu', 'branchFilterToggle'],
         ['schemeFilterMenu', 'schemeFilterToggle'],
-        ['tableSchemeFilterMenu', 'tableSchemeFilterToggle']
+        ['typeFilterMenu', 'typeFilterToggle'],
+        ['tableBranchFilterMenu', 'tableBranchFilterToggle'],
+        ['tableSchemeFilterMenu', 'tableSchemeFilterToggle'],
+        ['tableTypeFilterMenu', 'tableTypeFilterToggle'],
+        ['applicationBranchFilterMenu', 'applicationBranchFilterToggle'],
+        ['applicationSchemeFilterMenu', 'applicationSchemeFilterToggle'],
+        ['applicationTypeFilterMenu', 'applicationTypeFilterToggle'],
+        ['pendingValidationBranchFilterMenu', 'pendingValidationBranchFilterToggle'],
+        ['comparisonBranchFilterMenu', 'comparisonBranchFilterToggle'],
+        ['comparisonSchemeFilterMenu', 'comparisonSchemeFilterToggle'],
+        ['comparisonTypeFilterMenu', 'comparisonTypeFilterToggle']
     ].forEach(([menuId, toggleId]) => {
         const menu = document.getElementById(menuId);
         const toggle = document.getElementById(toggleId);
@@ -599,6 +4109,26 @@ function closeMultiSelectMenus() {
             toggle.setAttribute('aria-expanded', 'false');
         }
     });
+}
+
+function getMultiSelectSearchInput(optionsId) {
+    return document.getElementById(optionsId.replace(/Options$/, 'Search'));
+}
+
+function filterSelectOptions(optionsId, query) {
+    const optionsElement = document.getElementById(optionsId);
+    const needle = normalizeSearch(query);
+    [...optionsElement.children].forEach(option => {
+        option.hidden = needle && !normalizeSearch(option.textContent).includes(needle);
+    });
+}
+
+function normalizeSearch(value) {
+    return String(value || '').toLocaleLowerCase('ms-MY').trim();
+}
+
+function normalizeKey(value) {
+    return String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleUpperCase('ms-MY');
 }
 
 function parseAppDate(value) {
@@ -661,6 +4191,43 @@ function getDateRange(activeRows) {
     return { first: dates[0] || null, last: dates[dates.length - 1] || null };
 }
 
+function getDateRangeFromDates(dates) {
+    const sorted = dates.filter(Boolean).sort((a, b) => a - b);
+    return { first: sorted[0] || null, last: sorted[sorted.length - 1] || null };
+}
+
+function getWeekKey(row) {
+    const date = row.appliedDate ? row.appliedDate : parseIsoDate(row);
+    return toIsoDate(getMonday(date));
+}
+
+function getMonday(date) {
+    const result = toDateOnly(date);
+    const day = result.getDay();
+    result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
+    return result;
+}
+
+function formatWeekLabel(key) {
+    const start = parseIsoDate(key);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return `${formatShortDate(start)} - ${formatShortDate(end)}`;
+}
+
+function parseIsoDate(value) {
+    const [year, month, day] = String(value).split('-').map(Number);
+    return new Date(year, month - 1, day);
+}
+
+function isIsoDateString(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
+function formatDateFromIso(value) {
+    return formatShortDate(parseIsoDate(value));
+}
+
 function toDateOnly(date) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -677,6 +4244,45 @@ function formatShortDate(date) {
     return date.toLocaleDateString('ms-MY', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleString('ms-MY', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'Asia/Kuala_Lumpur'
+    });
+}
+
+function formatFullMalayDate(date) {
+    if (!date) return '-';
+    return date.toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function formatMalayFileDate(date) {
+    return formatFullMalayDate(date).replace(/\s+/g, ' ');
+}
+
+function formatSheetDate(date) {
+    if (!date) return 'Belum Diperaku';
+    return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+}
+
+function formatCsvDateTime(date) {
+    if (!date) return '';
+    return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'Asia/Kuala_Lumpur'
+    });
+}
+
 function formatPercent(value) {
     return `${Number(value || 0).toFixed(1)}%`;
 }
@@ -689,16 +4295,29 @@ function getPerformanceBadgeClass(percent) {
 
 function toProperCaps(value) {
     const smallWords = new Set(['dan', 'di', 'ke', 'dalam', 'serta', 'atau']);
+    const acronyms = new Set(['IPT', 'MAIWP', 'KPBKL', 'PICOMS', 'NGO', 'NPO', 'OKU', 'SMA', 'PAZA', 'JAWI', 'UCMI']);
     return String(value || '')
         .toLocaleLowerCase('ms-MY')
         .split(/\s+/)
         .map((word, index) => {
             if (index > 0 && smallWords.has(word)) return word;
-            return word.split(/([-/()])/).map(part => /^[a-z]/i.test(part)
-                ? part.charAt(0).toLocaleUpperCase('ms-MY') + part.slice(1)
-                : part).join('');
+            return word.split(/([-/()])/).map(part => {
+                const upper = part.toLocaleUpperCase('ms-MY');
+                if (acronyms.has(upper)) return upper;
+                return /^[a-z]/i.test(part)
+                    ? part.charAt(0).toLocaleUpperCase('ms-MY') + part.slice(1)
+                    : part;
+            }).join('');
         })
         .join(' ');
+}
+
+function formatMultiSelectLabel(value, preserveCase = false) {
+    return preserveCase ? String(value || '') : toProperCaps(value);
+}
+
+function formatChartValue(value) {
+    return Number(value || 0).toLocaleString('ms-MY');
 }
 
 function titleCase(value) {
@@ -712,6 +4331,14 @@ function escapeHtml(value) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+function escapeXml(value) {
+    return escapeHtml(value);
+}
+
+function sanitizeFileName(value) {
+    return String(value || '').replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
 }
 
 function csvEscape(value) {
