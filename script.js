@@ -3184,7 +3184,28 @@ function triggerDownload(blob, fileName) {
 }
 
 async function downloadPendingValidationExcel() {
-    showError('Eksport rekod pemohon dinyahaktifkan untuk perlindungan data peribadi.');
+    const branch = document.getElementById('pendingValidationDownloadBranch')?.value || '';
+    if (!branch) {
+        showError('Sila pilih cawangan untuk dimuat turun.');
+        return;
+    }
+
+    const branchRows = pendingValidationRows.filter(row => row.branch === branch);
+    if (!branchRows.length) {
+        showError(`Tiada data belum diperaku untuk cawangan ${branch}.`);
+        return;
+    }
+
+    const workbookXml = buildPendingValidationWorkbookHtml(branchRows, branch);
+    const blob = new Blob([`\uFEFF${workbookXml}`], {
+        type: 'application/vnd.ms-excel;charset=utf-8'
+    });
+    const branchSlug = branch
+        .toLocaleLowerCase('ms-MY')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'cawangan';
+    const reportDate = toIsoDate(dataRange.last || new Date());
+    triggerDownload(blob, `laporan-belum-diperaku-${branchSlug}-${reportDate}.xls`);
 }
 
 async function buildPendingValidationTemplateWorkbook(branchRows, branch) {
@@ -3449,12 +3470,13 @@ function buildPendingValidationWorkbookHtml(branchRows, branch) {
         ])
     ];
     const unmappedSheetRows = [
-        ['Skim Bantuan', 'Tarikh Mohon', 'Cawangan', 'PAZA'].map(value => textCell(value, 1, 'Header')),
+        ['Skim Bantuan', 'Bulan Permohonan', 'Cawangan', 'PAZA', 'Bilangan'].map(value => textCell(value, 1, 'Header')),
         ...unmappedRows.map(row => [
             textCell(row.systemScheme),
-            textCell(formatShortDate(row.appliedDate)),
+            textCell(`${pendingValidationMonthLabels[row.applicationMonth - 1] || '-'} ${row.appliedDate.getFullYear()}`),
             textCell(row.branch),
-            textCell(row.subBranch)
+            textCell(row.subBranch),
+            numberCell(row.applicationCount)
         ])
     ];
 
