@@ -571,6 +571,22 @@ select:focus {
     background: #dceaf3;
 }
 
+.text-button {
+    min-height: auto;
+    padding: 4px 0;
+    color: var(--brand);
+    background: transparent;
+    border: 0;
+    font-weight: 800;
+    text-align: left;
+}
+
+.text-button:hover {
+    color: var(--brand-2);
+    background: transparent;
+    text-decoration: underline;
+}
+
 .multi-select,
 .single-select {
     position: relative;

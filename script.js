@@ -182,6 +182,7 @@ let comparisonTypeOptions = [];
 let selectedComparisonBranches = [];
 let selectedComparisonSchemes = [];
 let selectedComparisonTypes = [];
+let passwordRecoveryMode = /(?:[?#&])type=recovery(?:[&#]|$)/i.test(`${window.location.search}${window.location.hash}`);
 
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.working-day-count').forEach(element => {
@@ -193,6 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAgingThresholdControl();
 
     document.getElementById('authForm').addEventListener('submit', handleLogin);
+    document.getElementById('forgotPasswordBtn').addEventListener('click', handleForgotPassword);
+    document.getElementById('passwordRecoveryForm').addEventListener('submit', handlePasswordUpdate);
     document.getElementById('profileButton').addEventListener('click', toggleProfileMenu);
     document.getElementById('profileLogoutBtn').addEventListener('click', handleLogout);
     document.getElementById('chooseFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
@@ -392,7 +395,13 @@ async function initializeSupabase() {
     }
 
     supabaseClient = window.supabase.createClient(config.url, config.anonKey);
-    supabaseClient.auth.onAuthStateChange((_event, session) => {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+            passwordRecoveryMode = true;
+            showPasswordRecoveryForm();
+            return;
+        }
+        if (passwordRecoveryMode) return;
         updateAuthUi(session);
         if (session) loadSupabaseData();
     });
@@ -402,8 +411,12 @@ async function initializeSupabase() {
         showAuthMessage(error.message, true);
         return;
     }
-    updateAuthUi(data.session);
-    if (data.session) await loadSupabaseData();
+    if (passwordRecoveryMode) {
+        showPasswordRecoveryForm();
+    } else {
+        updateAuthUi(data.session);
+        if (data.session) await loadSupabaseData();
+    }
 }
 
 async function handleLogin(event) {
@@ -441,6 +454,78 @@ async function handleLogin(event) {
         return;
     }
     document.getElementById('passwordInput').value = '';
+}
+
+async function handleForgotPassword() {
+    if (!supabaseClient) {
+        showAuthMessage('Supabase belum dikonfigurasi.', true);
+        return;
+    }
+
+    const username = document.getElementById('usernameInput').value.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username)) {
+        showAuthMessage('Masukkan alamat emel penuh untuk menerima pautan reset.', true);
+        return;
+    }
+
+    const button = document.getElementById('forgotPasswordBtn');
+    button.disabled = true;
+    button.textContent = 'Menghantar pautan...';
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(username, { redirectTo });
+    button.disabled = false;
+    button.textContent = 'Lupa kata laluan?';
+
+    if (error) {
+        showAuthMessage(`Pautan reset gagal dihantar: ${error.message}`, true);
+        return;
+    }
+    showAuthMessage('Pautan reset telah dihantar. Semak Inbox dan folder Spam emel anda.', false);
+}
+
+function showPasswordRecoveryForm() {
+    document.getElementById('loginView').hidden = false;
+    document.getElementById('appContent').hidden = true;
+    document.getElementById('authForm').hidden = true;
+    document.getElementById('passwordRecoveryForm').hidden = false;
+    showAuthMessage('Masukkan kata laluan baharu sekurang-kurangnya 12 aksara.', false);
+}
+
+async function handlePasswordUpdate(event) {
+    event.preventDefault();
+    const password = document.getElementById('newPasswordInput').value;
+    const confirmation = document.getElementById('confirmPasswordInput').value;
+    if (password.length < 12) {
+        showAuthMessage('Kata laluan baharu mestilah sekurang-kurangnya 12 aksara.', true);
+        return;
+    }
+    if (password !== confirmation) {
+        showAuthMessage('Pengesahan kata laluan tidak sepadan.', true);
+        return;
+    }
+
+    const button = document.getElementById('updatePasswordBtn');
+    button.disabled = true;
+    button.textContent = 'Sedang Menyimpan...';
+    const { error } = await supabaseClient.auth.updateUser({ password });
+    button.disabled = false;
+    button.textContent = 'Simpan Kata Laluan Baharu';
+
+    if (error) {
+        showAuthMessage(`Kata laluan tidak dapat dikemas kini: ${error.message}`, true);
+        return;
+    }
+
+    passwordRecoveryMode = false;
+    document.getElementById('newPasswordInput').value = '';
+    document.getElementById('confirmPasswordInput').value = '';
+    document.getElementById('passwordRecoveryForm').hidden = true;
+    document.getElementById('authForm').hidden = false;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    const { data } = await supabaseClient.auth.getSession();
+    showAuthMessage('Kata laluan berjaya ditukar.', false);
+    updateAuthUi(data.session);
+    if (data.session) await loadSupabaseData();
 }
 
 async function handleLogout() {
