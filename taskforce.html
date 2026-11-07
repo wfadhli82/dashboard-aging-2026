@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Prototaip dashboard pemantauan Taskforce Permohonan Belum Diperaku MAIWP.">
+    <title>Taskforce Belum Diperaku | MAIWP</title>
+    <link rel="stylesheet" href="taskforce.css?v=20261107">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="hero">
+            <div>
+                <a class="back-link" href="index.html">← Dashboard utama</a>
+                <p class="eyebrow">MAIWP · Bahagian Agihan Zakat</p>
+                <h1>Taskforce Belum Diperaku</h1>
+                <p class="lead">Pemantauan kemajuan perakuan mengikut pegawai.</p>
+            </div>
+            <div class="prototype-badge">
+                <span class="pulse" aria-hidden="true"></span>
+                Prototaip · data simulasi
+            </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Ringkasan taskforce">
+            <article class="summary-card total-card">
+                <span>Jumlah diagihkan</span>
+                <strong id="grandTotal">—</strong>
+                <small>permohonan</small>
+            </article>
+            <article class="summary-card completed-card">
+                <span>Telah diperaku</span>
+                <strong id="completedTotal">—</strong>
+                <small id="completedPercent">— daripada keseluruhan</small>
+            </article>
+            <article class="summary-card pending-card">
+                <span>Belum diperaku</span>
+                <strong id="pendingTotal">—</strong>
+                <small id="pendingPercent">— daripada keseluruhan</small>
+            </article>
+        </section>
+
+        <section class="chart-card" aria-labelledby="chartTitle">
+            <div class="chart-header">
+                <div>
+                    <p class="section-kicker">Kemajuan mengikut pegawai</p>
+                    <h2 id="chartTitle">Status Perakuan Taskforce</h2>
+                </div>
+                <div class="legend" aria-label="Petunjuk warna">
+                    <span><i class="legend-dot completed-dot"></i>Telah diperaku</span>
+                    <span><i class="legend-dot pending-dot"></i>Belum diperaku</span>
+                </div>
+            </div>
+
+            <div class="chart-scale" aria-hidden="true">
+                <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+            </div>
+            <div id="taskforceChart" class="taskforce-chart" role="list" aria-label="Carta kemajuan perakuan mengikut pegawai"></div>
+        </section>
+
+        <footer>
+            <p>Prototaip awal untuk semakan reka bentuk. Angka kemajuan hijau ialah simulasi dan belum disambungkan kepada rekod langsung.</p>
+            <p id="renderedAt"></p>
+        </footer>
+    </main>
+
+    <script src="taskforce.js?v=20261107"></script>
+</body>
+</html>
