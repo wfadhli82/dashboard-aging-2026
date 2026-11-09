@@ -20,6 +20,11 @@ const taskforceData = [
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
 
+const rankOfficers = officers => officers
+    .map((officer, originalIndex) => ({ ...officer, originalIndex }))
+    .sort((first, second) => second.completed - first.completed
+        || first.originalIndex - second.originalIndex);
+
 function renderDashboard() {
     const chart = document.getElementById('taskforceChart');
     const totals = taskforceData.reduce((result, officer) => ({
@@ -34,7 +39,7 @@ function renderDashboard() {
     document.getElementById('completedPercent').textContent = `${Math.round(totals.completed / grandTotal * 100)}% daripada keseluruhan`;
     document.getElementById('pendingPercent').textContent = `${Math.round(totals.pending / grandTotal * 100)}% daripada keseluruhan`;
 
-    chart.replaceChildren(...taskforceData.map(officer => {
+    chart.replaceChildren(...rankOfficers(taskforceData).map(officer => {
         const total = officer.completed + officer.pending;
         const row = document.createElement('div');
         row.className = 'chart-row';
