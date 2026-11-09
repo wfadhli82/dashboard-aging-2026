@@ -1,21 +1,21 @@
 const taskforceData = [
-    { name: 'Khairunnisak', completed: 28, pending: 70 },
-    { name: 'Yasier', completed: 52, pending: 47 },
-    { name: 'Aishah Albasri', completed: 44, pending: 55 },
-    { name: "Mu'adz", completed: 61, pending: 38 },
-    { name: 'Mislia', completed: 37, pending: 62 },
-    { name: 'Najiha', completed: 48, pending: 51 },
-    { name: 'Noorfirdaus', completed: 35, pending: 63 },
-    { name: 'Ishak', completed: 70, pending: 29 },
-    { name: 'Syafiq', completed: 58, pending: 41 },
-    { name: 'Ali Hussini', completed: 43, pending: 55 },
-    { name: 'Shahir', completed: 64, pending: 34 },
-    { name: 'Faiz Ikmal', completed: 29, pending: 70 },
-    { name: 'Safwan', completed: 76, pending: 23 },
-    { name: 'Shahrul Zaman', completed: 51, pending: 47 },
-    { name: 'Firdzuan', completed: 67, pending: 31 },
-    { name: 'Faizal', completed: 55, pending: 44 },
-    { name: 'Izham', completed: 40, pending: 58 }
+    { name: 'Khairunnisak', completed: 0, pending: 98 },
+    { name: 'Yasier', completed: 0, pending: 99 },
+    { name: 'Aishah Albasri', completed: 0, pending: 99 },
+    { name: "Mu'adz", completed: 0, pending: 99 },
+    { name: 'Mislia', completed: 0, pending: 99 },
+    { name: 'Najiha', completed: 0, pending: 99 },
+    { name: 'Noorfirdaus', completed: 0, pending: 98 },
+    { name: 'Ishak', completed: 0, pending: 99 },
+    { name: 'Syafiq', completed: 0, pending: 99 },
+    { name: 'Ali Hussini', completed: 0, pending: 98 },
+    { name: 'Shahir', completed: 0, pending: 98 },
+    { name: 'Faiz Ikmal', completed: 0, pending: 99 },
+    { name: 'Safwan', completed: 0, pending: 99 },
+    { name: 'Shahrul Zaman', completed: 0, pending: 98 },
+    { name: 'Firdzuan', completed: 0, pending: 98 },
+    { name: 'Faizal', completed: 0, pending: 99 },
+    { name: 'Izham', completed: 0, pending: 98 }
 ];
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
