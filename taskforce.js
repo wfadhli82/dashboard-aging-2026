@@ -1,22 +1,24 @@
 const taskforceData = [
-    { name: 'Khairunnisak', completed: 0, pending: 98 },
-    { name: 'Yasier', completed: 0, pending: 99 },
-    { name: 'Aishah Albasri', completed: 0, pending: 99 },
-    { name: "Mu'adz", completed: 0, pending: 99 },
-    { name: 'Mislia', completed: 0, pending: 99 },
-    { name: 'Najiha', completed: 0, pending: 99 },
-    { name: 'Noorfirdaus', completed: 0, pending: 98 },
-    { name: 'Ishak', completed: 0, pending: 99 },
-    { name: 'Syafiq', completed: 0, pending: 99 },
-    { name: 'Ali Hussini', completed: 0, pending: 98 },
-    { name: 'Shahir', completed: 0, pending: 98 },
-    { name: 'Faiz Ikmal', completed: 0, pending: 99 },
-    { name: 'Safwan', completed: 0, pending: 99 },
-    { name: 'Shahrul Zaman', completed: 0, pending: 98 },
-    { name: 'Firdzuan', completed: 0, pending: 98 },
-    { name: 'Faizal', completed: 0, pending: 99 },
-    { name: 'Izham', completed: 0, pending: 98 }
+    { name: 'Khairunnisak', completed: 24, pending: 74 },
+    { name: 'Yasier', completed: 18, pending: 81 },
+    { name: 'Aishah Albasri', completed: 10, pending: 89 },
+    { name: "Mu'adz", completed: 10, pending: 89 },
+    { name: 'Mislia', completed: 7, pending: 92 },
+    { name: 'Najiha', completed: 14, pending: 85 },
+    { name: 'Noorfirdaus', completed: 56, pending: 42 },
+    { name: 'Ishak', completed: 20, pending: 79 },
+    { name: 'Syafiq', completed: 23, pending: 76 },
+    { name: 'Ali Hussini', completed: 14, pending: 84 },
+    { name: 'Shahir', completed: 15, pending: 83 },
+    { name: 'Faiz Ikmal', completed: 2, pending: 97 },
+    { name: 'Safwan', completed: 23, pending: 76 },
+    { name: 'Shahrul Zaman', completed: 25, pending: 73 },
+    { name: 'Firdzuan', completed: 14, pending: 84 },
+    { name: 'Faizal', completed: 24, pending: 75 },
+    { name: 'Izham', completed: 28, pending: 70 }
 ];
+
+const dataUpdatedAt = new Date('2026-11-10T04:00:00.728Z');
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
 
@@ -58,9 +60,9 @@ function renderDashboard() {
         return row;
     }));
 
-    document.getElementById('renderedAt').textContent = `Paparan dijana: ${new Intl.DateTimeFormat('ms-MY', {
+    document.getElementById('renderedAt').textContent = `Data dikemas kini: ${new Intl.DateTimeFormat('ms-MY', {
         dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Kuala_Lumpur'
-    }).format(new Date())}`;
+    }).format(dataUpdatedAt)}`;
 }
 
 renderDashboard();
