@@ -1,8 +1,8 @@
 const taskforceData = [
     {
         "name": "Khairunnisak",
-        "completed": 37,
-        "pending": 61
+        "completed": 40,
+        "pending": 58
     },
     {
         "name": "Yasier",
@@ -26,38 +26,38 @@ const taskforceData = [
     },
     {
         "name": "Najiha",
-        "completed": 37,
-        "pending": 62
+        "completed": 43,
+        "pending": 56
     },
     {
         "name": "Noorfirdaus",
-        "completed": 84,
-        "pending": 14
+        "completed": 85,
+        "pending": 13
     },
     {
         "name": "Ishak",
-        "completed": 38,
-        "pending": 61
+        "completed": 58,
+        "pending": 41
     },
     {
         "name": "Syafiq",
-        "completed": 53,
-        "pending": 46
+        "completed": 65,
+        "pending": 34
     },
     {
         "name": "Ali Hussini",
-        "completed": 23,
-        "pending": 75
+        "completed": 26,
+        "pending": 72
     },
     {
         "name": "Shahir",
-        "completed": 49,
-        "pending": 49
+        "completed": 68,
+        "pending": 30
     },
     {
         "name": "Faiz Ikmal",
-        "completed": 14,
-        "pending": 85
+        "completed": 15,
+        "pending": 84
     },
     {
         "name": "Safwan",
@@ -66,13 +66,13 @@ const taskforceData = [
     },
     {
         "name": "Shahrul Zaman",
-        "completed": 49,
-        "pending": 49
+        "completed": 52,
+        "pending": 46
     },
     {
         "name": "Firdzuan",
-        "completed": 62,
-        "pending": 36
+        "completed": 73,
+        "pending": 25
     },
     {
         "name": "Faizal",
@@ -81,12 +81,12 @@ const taskforceData = [
     },
     {
         "name": "Izham",
-        "completed": 45,
-        "pending": 53
+        "completed": 48,
+        "pending": 50
     }
 ];
 
-const dataUpdatedAt = new Date('2026-11-11T07:21:32.620Z');
+const dataUpdatedAt = new Date('2026-11-11T23:37:58.168Z');
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
 
