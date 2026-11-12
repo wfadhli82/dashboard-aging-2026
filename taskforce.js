@@ -1,8 +1,8 @@
 const taskforceData = [
     {
         "name": "Khairunnisak",
-        "completed": 59,
-        "pending": 39
+        "completed": 64,
+        "pending": 34
     },
     {
         "name": "Yasier",
@@ -16,13 +16,13 @@ const taskforceData = [
     },
     {
         "name": "Mu'adz",
-        "completed": 31,
-        "pending": 68
+        "completed": 32,
+        "pending": 67
     },
     {
         "name": "Mislia",
-        "completed": 38,
-        "pending": 61
+        "completed": 39,
+        "pending": 60
     },
     {
         "name": "Najiha",
@@ -66,8 +66,8 @@ const taskforceData = [
     },
     {
         "name": "Shahrul Zaman",
-        "completed": 66,
-        "pending": 32
+        "completed": 68,
+        "pending": 30
     },
     {
         "name": "Firdzuan",
@@ -81,12 +81,12 @@ const taskforceData = [
     },
     {
         "name": "Izham",
-        "completed": 69,
-        "pending": 29
+        "completed": 71,
+        "pending": 27
     }
 ];
 
-const dataUpdatedAt = new Date('2026-11-12T14:30:36.356Z');
+const dataUpdatedAt = new Date('2026-11-12T23:03:29.657Z');
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
 
