@@ -1,33 +1,33 @@
 const taskforceData = [
     {
         "name": "Khairunnisak",
-        "completed": 64,
-        "pending": 34
+        "completed": 70,
+        "pending": 28
     },
     {
         "name": "Yasier",
-        "completed": 78,
-        "pending": 21
+        "completed": 89,
+        "pending": 10
     },
     {
         "name": "Aishah Albasri",
-        "completed": 55,
-        "pending": 44
+        "completed": 77,
+        "pending": 22
     },
     {
         "name": "Mu'adz",
-        "completed": 32,
-        "pending": 67
+        "completed": 60,
+        "pending": 39
     },
     {
         "name": "Mislia",
-        "completed": 39,
-        "pending": 60
+        "completed": 64,
+        "pending": 35
     },
     {
         "name": "Najiha",
-        "completed": 47,
-        "pending": 52
+        "completed": 72,
+        "pending": 27
     },
     {
         "name": "Noorfirdaus",
@@ -36,8 +36,8 @@ const taskforceData = [
     },
     {
         "name": "Ishak",
-        "completed": 63,
-        "pending": 36
+        "completed": 65,
+        "pending": 34
     },
     {
         "name": "Syafiq",
@@ -46,8 +46,8 @@ const taskforceData = [
     },
     {
         "name": "Ali Hussini",
-        "completed": 42,
-        "pending": 56
+        "completed": 45,
+        "pending": 53
     },
     {
         "name": "Shahir",
@@ -56,18 +56,18 @@ const taskforceData = [
     },
     {
         "name": "Faiz Ikmal",
-        "completed": 29,
-        "pending": 70
+        "completed": 37,
+        "pending": 62
     },
     {
         "name": "Safwan",
-        "completed": 53,
-        "pending": 46
+        "completed": 57,
+        "pending": 42
     },
     {
         "name": "Shahrul Zaman",
-        "completed": 68,
-        "pending": 30
+        "completed": 72,
+        "pending": 26
     },
     {
         "name": "Firdzuan",
@@ -81,12 +81,12 @@ const taskforceData = [
     },
     {
         "name": "Izham",
-        "completed": 71,
-        "pending": 27
+        "completed": 80,
+        "pending": 18
     }
 ];
 
-const dataUpdatedAt = new Date('2026-11-12T23:03:29.657Z');
+const dataUpdatedAt = new Date('2026-11-13T04:51:48.669Z');
 
 const formatNumber = value => new Intl.NumberFormat('ms-MY').format(value);
 
